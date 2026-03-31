@@ -29,10 +29,9 @@ async def upload_photo_to_s3(file_id: str, bot) -> str:
             Key=file_name,
             Body=destination,
             ContentType="image/jpeg",
-            ACL="public-read"  # Делаем файл публичным сразу
+            ACL="public-read"
         )
     
-    # 5. Формируем ссылку (зависит от настроек эндпоинта)
-    # Для Timeweb обычно: https://s3.timeweb.com/bucket_name/key
+    # 5. Формируем ссылку
     public_url = f"{S3_CONFIG['endpoint_url']}/{S3_BUCKET}/{file_name}"
     return public_url
