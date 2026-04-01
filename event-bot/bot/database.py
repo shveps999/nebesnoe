@@ -18,7 +18,8 @@ async def init_db():
                 photo_url TEXT,
                 status VARCHAR(50) DEFAULT 'pending',
                 admin_comment TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             )
         """)
         await conn.commit()
@@ -32,7 +33,9 @@ async def add_profile(tg_id, name, occupation, looking, photo_url):
             (tg_id, name, occupation, looking, photo_url)
         )
         await conn.commit()
+        profile_id = cursor.lastrowid
     conn.close()
+    return profile_id
 
 async def get_pending_profiles():
     conn = await get_connection()
@@ -64,6 +67,14 @@ async def get_profile_by_id(profile_id):
     conn = await get_connection()
     async with conn.cursor(aiomysql.DictCursor) as cursor:
         await cursor.execute("SELECT * FROM profiles WHERE id = %s", (profile_id,))
+        result = await cursor.fetchone()
+    conn.close()
+    return result
+
+async def get_profile_by_tg_id(tg_id):
+    conn = await get_connection()
+    async with conn.cursor(aiomysql.DictCursor) as cursor:
+        await cursor.execute("SELECT * FROM profiles WHERE tg_id = %s ORDER BY id DESC LIMIT 1", (tg_id,))
         result = await cursor.fetchone()
     conn.close()
     return result
