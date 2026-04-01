@@ -34,3 +34,19 @@ def get_back_to_menu_keyboard():
     builder = InlineKeyboardBuilder()
     builder.button(text="🏠 В главное меню", callback_data="back_to_menu")
     return builder.as_markup()
+
+def get_clear_all_confirm_keyboard():
+    """Кнопки подтверждения очистки всех анкет"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="⚠️ ДА, УДАЛИТЬ ВСЁ", callback_data="clear_all_confirm")
+    builder.button(text="❌ Отмена", callback_data="clear_all_cancel")
+    builder.adjust(2)
+    return builder.as_markup()
+
+def get_admin_keyboard():
+    """Админ-панель с кнопками управления"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🗑️ Удалить все анкеты", callback_data="clear_all")
+    builder.button(text="📊 Статистика", callback_data="admin_stats")
+    builder.adjust(2)
+    return builder.as_markup()
