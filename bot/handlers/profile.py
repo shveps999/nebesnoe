@@ -19,10 +19,10 @@ class ProfileForm(StatesGroup):
     photo = State()
 
 @router.callback_query(F.data == "add_profile")
-async def add_profile_callback(callback: types.CallbackQuery):
+async def add_profile_callback(callback: types.CallbackQuery, state: FSMContext):
     """Обработка кнопки 'Добавить анкету'"""
     await callback.message.delete()
-    await start_form(callback.message, callback.state)
+    await start_form(callback.message, state)  # ✅ Передаём state как параметр
     await callback.answer()
 
 async def start_form(message: types.Message, state: FSMContext):
