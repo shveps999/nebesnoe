@@ -54,14 +54,6 @@ async def main():
     dp.include_router(profile.router)
     dp.include_router(admin.router)
     
-    # Middleware для логирования (ПРАВИЛЬНЫЙ СИНТАКСИС ДЛЯ AIОGRAM 3!)
-    @dp.update.middleware()
-    async def log_updates(handler, event, data):
-        if hasattr(event, 'update_id'):
-            user_id = getattr(getattr(event, 'from_user', None), 'id', 'unknown')
-            root_logger.info(f"Update: {event.update_id} from user {user_id}")
-        return await handler(event, data)
-    
     # Обработчик команды /start с главной клавиатурой
     @dp.message(CommandStart())
     async def cmd_start(message: types.Message):
