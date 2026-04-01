@@ -4,7 +4,7 @@ import sys
 import os
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart
-from bot.config import BOT_TOKEN
+from bot.config import BOT_TOKEN, ADMIN_ID
 from bot.database import init_db
 from bot.handlers import start, profile, admin
 from bot.keyboards import get_main_menu_inline
@@ -53,6 +53,13 @@ async def main():
     dp.include_router(start.router)
     dp.include_router(profile.router)
     dp.include_router(admin.router)
+    
+    # Middleware для логирования
+    @dp.middleware()
+    async def log_updates(handler, event, data):
+        if hasattr(event, 'update_id') and hasattr(event, 'from_user'):
+            root_logger.info(f"Update: {event.update_id} from user {event.from_user.id if event.from_user else 'unknown'}")
+        return await handler(event, data)
     
     # Обработчик команды /start с главной клавиатурой
     @dp.message(CommandStart())
