@@ -2,8 +2,10 @@ import logging
 from aiogram import Router, F, types, Bot
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from bot.keyboards import get_moderation_keyboard, get_main_menu_inline
-from bot.database import get_pending_profiles, update_profile_status, get_profile_by_id
+from aiogram.filters import Command
+from bot.keyboards import get_moderation_keyboard, get_main_menu_inline, get_clear_all_confirm_keyboard, get_admin_keyboard
+from bot.database import get_pending_profiles, update_profile_status, get_profile_by_id, get_all_approved_with_photos, delete_all_approved_profiles
+from bot.s3_storage import delete_multiple_photos_from_s3
 from bot.config import ADMIN_ID, MODERATION_CHAT_ID
 
 logger = logging.getLogger(__name__)
@@ -12,6 +14,124 @@ router = Router()
 class AdminEdit(StatesGroup):
     comment = State()
     profile_id = State()
+
+# ============================================
+# КОМАНДА /clear_all - Удаление всех анкет
+# ============================================
+
+@router.message(Command("clear_all"), F.from_user.id == ADMIN_ID)
+async def cmd_clear_all(message: types.Message):
+    """Команда для удаления всех опубликованных анкет"""
+    await message.answer(
+        "⚠️ **ВНИМАНИЕ!**\n\n"
+        "Вы собираетесь удалить **ВСЕ опубликованные анкеты**:\n"
+        "• Из базы данных\n"
+        "• Фото из хранилища S3\n\n"
+        "Это действие **НЕЛЬЗЯ ОТМЕНИТЬ**!\n\n"
+        "Подтвердите удаление:",
+        parse_mode="Markdown",
+        reply_markup=get_clear_all_confirm_keyboard()
+    )
+    logger.info(f"Admin {message.from_user.id} initiated clear_all command")
+
+@router.callback_query(F.data == "clear_all_confirm")
+async def clear_all_confirm(callback: types.CallbackQuery, bot: Bot):
+    """Подтверждение удаления всех анкет"""
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("❌ Доступ запрещен", show_alert=True)
+        return
+    
+    await callback.message.edit_text(
+        "⏳ **Удаление...**\n\n"
+        "Пожалуйста, подождите.",
+        parse_mode="Markdown"
+    )
+    
+    try:
+        # 1. Получаем все фото для удаления
+        profiles = await get_all_approved_with_photos()
+        photo_urls = [p['photo_url'] for p in profiles if p['photo_url']]
+        
+        # 2. Удаляем фото из S3
+        s3_stats = {'success': 0, 'failed': 0}
+        if photo_urls:
+            s3_stats = await delete_multiple_photos_from_s3(photo_urls)
+        
+        # 3. Удаляем профили из БД
+        deleted_count = await delete_all_approved_profiles()
+        
+        # 4. Отправляем отчет
+        report = (
+            "✅ **Удаление завершено!**\n\n"
+            f"🗑️ Удалено анкет из БД: **{deleted_count}**\n"
+            f"📸 Удалено фото из S3: **{s3_stats['success']}**\n"
+            f"❌ Ошибок при удалении фото: **{s3_stats['failed']}**\n\n"
+            "Все опубликованные анкеты удалены."
+        )
+        
+        await callback.message.edit_text(
+            report,
+            parse_mode="Markdown",
+            reply_markup=get_main_menu_inline()
+        )
+        
+        logger.info(f"Admin {callback.from_user.id} cleared {deleted_count} profiles. S3: {s3_stats}")
+        
+    except Exception as e:
+        logger.error(f"Ошибка при очистке: {e}")
+        await callback.message.edit_text(
+            f"❌ **Ошибка при удалении:**\n\n{str(e)}\n\n"
+            "Попробуйте позже.",
+            parse_mode="Markdown",
+            reply_markup=get_main_menu_inline()
+        )
+    
+    await callback.answer()
+
+@router.callback_query(F.data == "clear_all_cancel")
+async def clear_all_cancel(callback: types.CallbackQuery):
+    """Отмена удаления всех анкет"""
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("❌ Доступ запрещен", show_alert=True)
+        return
+    
+    await callback.message.edit_text(
+        "❌ **Удаление отменено.**\n\n"
+        "Все анкеты сохранены.",
+        parse_mode="Markdown",
+        reply_markup=get_main_menu_inline()
+    )
+    await callback.answer()
+
+@router.callback_query(F.data == "admin_stats")
+async def admin_stats(callback: types.CallbackQuery):
+    """Показать статистику по анкетам"""
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("❌ Доступ запрещен", show_alert=True)
+        return
+    
+    from bot.database import get_approved_profiles, get_pending_profiles
+    
+    approved = await get_approved_profiles()
+    pending = await get_pending_profiles()
+    
+    stats = (
+        "📊 **Статистика анкет**\n\n"
+        f"✅ Одобрено: **{len(approved)}**\n"
+        f"⏳ На модерации: **{len(pending)}**\n"
+        f"📈 Всего: **{len(approved) + len(pending)}**"
+    )
+    
+    await callback.message.answer(
+        stats,
+        parse_mode="Markdown",
+        reply_markup=get_main_menu_inline()
+    )
+    await callback.answer()
+
+# ============================================
+# МОДЕРАЦИЯ АНКЕТ
+# ============================================
 
 @router.callback_query(F.data.startswith("admin_approve_"))
 async def admin_approve(callback: types.CallbackQuery, bot: Bot):
@@ -112,7 +232,6 @@ async def admin_send_comment(message: types.Message, state: FSMContext, bot: Bot
     
     # УДАЛИТЬ сообщение модерации из чата
     try:
-        # Найти и удалить оригинальное сообщение модерации
         await callback.message.delete()
         logger.info(f"Moderation message {callback.message.message_id} deleted after edit request")
     except Exception as e:
