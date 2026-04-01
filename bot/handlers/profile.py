@@ -2,7 +2,6 @@ import logging
 from aiogram import Router, F, types, Bot
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import ReplyKeyboardRemove
 from bot.keyboards import get_cancel_keyboard, get_main_menu_reply
 from bot.database import add_profile
 from bot.config import ADMIN_ID, MODERATION_CHAT_ID
@@ -19,14 +18,9 @@ class ProfileForm(StatesGroup):
     looking = State()
     photo = State()
 
-@router.callback_query(F.data == "add_profile")
-async def add_profile_callback(callback: types.CallbackQuery):
-    await callback.message.delete()
-    await start_form(callback.message, callback.state)
-    await callback.answer()
-
-async def start_form(message: types.Message, state: FSMContext):
-    """Начало заполнения анкеты"""
+# Обработчик кнопки "Добавить анкету" (текстовая)
+@router.message(F.text == "📝 Добавить анкету")
+async def add_profile_button(message: types.Message, state: FSMContext):
     await message.answer(
         "📝 **Заполнение анкеты**\n\nВведите ваше **Имя**:",
         parse_mode="Markdown",
@@ -34,6 +28,13 @@ async def start_form(message: types.Message, state: FSMContext):
     )
     await state.set_state(ProfileForm.name)
     logger.info(f"Started profile form for user {message.from_user.id}")
+
+# Обработчик callback (для инлайн кнопок)
+@router.callback_query(F.data == "add_profile")
+async def add_profile_callback(callback: types.CallbackQuery, state: FSMContext):
+    await callback.message.delete()
+    await add_profile_button(callback.message, state)
+    await callback.answer()
 
 @router.message(ProfileForm.name, F.text)
 async def process_name(message: types.Message, state: FSMContext):
@@ -90,15 +91,12 @@ async def process_photo(message: types.Message, state: FSMContext, bot: Bot):
     data = await state.get_data()
     
     try:
-        await message.answer(
-            "⏳ Загрузка фото...",
-            reply_markup=get_main_menu_reply()
-        )
+        await message.answer("⏳ Загрузка фото...", reply_markup=get_main_menu_reply())
         photo_url = await upload_photo_to_s3(photo_id, bot)
     except Exception as e:
         logger.error(f"Ошибка загрузки в S3: {e}")
         await message.answer(
-            "❌ Ошибка загрузки фото. Попробуйте позже или заполните анкету без фото.",
+            "❌ Ошибка загрузки фото. Попробуйте позже.",
             reply_markup=get_main_menu_reply()
         )
         await state.clear()
@@ -182,10 +180,9 @@ async def notify_admin(bot: Bot, user_id: int, data: dict, photo_url: str, profi
                 parse_mode="Markdown",
                 reply_markup=get_moderation_keyboard(profile_id)
             )
-        logger.info(f"Moderation notification sent to chat {MODERATION_CHAT_ID} for profile {profile_id}")
+        logger.info(f"Moderation notification sent to chat {MODERATION_CHAT_ID}")
     except Exception as e:
         logger.error(f"Ошибка отправки уведомления админу: {e}")
-        # Фоллбэк на личный чат админа
         try:
             if photo_url:
                 await bot.send_photo(
