@@ -2,31 +2,45 @@ import asyncio
 import logging
 import sys
 import os
-from aiogram import Bot, Dispatcher
-from bot.config import BOT_TOKEN
+from aiogram import Bot, Dispatcher, types, F
+from aiogram.filters import CommandStart
+from aiogram.types import ReplyKeyboardRemove
+from bot.config import BOT_TOKEN, ADMIN_ID, MODERATION_CHAT_ID
 from bot.database import init_db
 from bot.handlers import start, profile, admin
+from bot.keyboards import get_main_menu_reply
 
 # Создание папки для логов
 os.makedirs("logs", exist_ok=True)
 
-# Отключаем буферизацию stdout для немедленного вывода в journalctl
+# Отключаем буферизацию
 os.environ["PYTHONUNBUFFERED"] = "1"
 
-# Настройка логирования: вывод и в файл, и в консоль
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.FileHandler("logs/bot.log", encoding="utf-8"),
-        logging.StreamHandler(sys.stdout)
-    ],
-    force=True  # Перезаписываем любые предыдущие настройки логирования
-)
+# Настройка логирования
+formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
 
-# Тестовое сообщение для проверки
-print(">>> BOT STARTED TEST MESSAGE <<<", flush=True)
-logging.info("=== БОТ ЗАПУЩЕН ===")
+file_handler = logging.FileHandler("logs/bot.log", encoding="utf-8", mode="a")
+file_handler.setFormatter(formatter)
+file_handler.setLevel(logging.INFO)
+
+console_handler = logging.StreamHandler(sys.stdout)
+console_handler.setFormatter(formatter)
+console_handler.setLevel(logging.INFO)
+
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
+root_logger.handlers = []
+root_logger.addHandler(file_handler)
+root_logger.addHandler(console_handler)
+
+aiogram_logger = logging.getLogger("aiogram")
+aiogram_logger.setLevel(logging.INFO)
+aiogram_logger.handlers = []
+aiogram_logger.addHandler(file_handler)
+aiogram_logger.addHandler(console_handler)
+
+root_logger.info("=== БОТ ЗАПУЩЕН ===")
+print(">>> TEST STDOUT MESSAGE <<<", flush=True)
 
 async def main():
     bot = Bot(token=BOT_TOKEN)
@@ -34,15 +48,40 @@ async def main():
     
     # Инициализация БД
     await init_db()
-    logging.info("База данных инициализирована")
+    root_logger.info("База данных инициализирована")
     
     # Регистрация роутеров
     dp.include_router(start.router)
     dp.include_router(profile.router)
     dp.include_router(admin.router)
     
+    # Middleware для логирования
+    @dp.middleware()
+    async def log_updates(handler, event, data):
+        if hasattr(event, 'update_id') and hasattr(event, 'from_user'):
+            root_logger.info(f"Update: {event.update_id} from user {event.from_user.id if event.from_user else 'unknown'}")
+        return await handler(event, data)
+    
+    # Обработчик команды /start с главной клавиатурой
+    @dp.message(CommandStart())
+    async def cmd_start(message: types.Message):
+        await message.answer(
+            "👋 Привет! Это бот мероприятия 'Гости Небесного'.\n\nВыберите действие:",
+            reply_markup=get_main_menu_reply()
+        )
+        root_logger.info(f"User {message.from_user.id} pressed /start")
+    
+    # Обработчик текстовых кнопок главного меню
+    @dp.message(F.text == "👥 Посмотреть участников")
+    async def view_participants_button(message: types.Message):
+        await start.view_participants(message)
+    
+    @dp.message(F.text == "📝 Добавить анкету")
+    async def add_profile_button(message: types.Message):
+        await profile.start_form(message)
+    
     # Запуск
-    logging.info("Бот запущен и готов к работе...")
+    root_logger.info("Бот запущен и готов к работе...")
     print(">>> POLLING STARTED <<<", flush=True)
     
     await dp.start_polling(bot)
@@ -51,7 +90,7 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logging.info("Бот выключен пользователем")
+        root_logger.info("Бот выключен пользователем")
     except Exception as e:
-        logging.error(f"Критическая ошибка: {e}", exc_info=True)
+        root_logger.error(f"Критическая ошибка: {e}", exc_info=True)
         print(f">>> CRITICAL ERROR: {e} <<<", flush=True)
