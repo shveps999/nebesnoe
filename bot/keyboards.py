@@ -1,21 +1,13 @@
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
-from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 def get_main_menu_inline():
-    """Главное меню - инлайн кнопки (всегда видны под сообщением)"""
+    """Главное меню - инлайн кнопки (всегда под сообщением)"""
     builder = InlineKeyboardBuilder()
     builder.button(text="👥 Посмотреть участников", callback_data="view_participants")
     builder.button(text="📝 Добавить анкету", callback_data="add_profile")
     builder.adjust(1)
     return builder.as_markup()
-
-def get_main_menu_reply():
-    """Главное меню - reply кнопки (всегда висят внизу)"""
-    builder = ReplyKeyboardBuilder()
-    builder.button(text="👥 Посмотреть участников")
-    builder.button(text="📝 Добавить анкету")
-    builder.adjust(1)
-    return builder.as_markup(resize_keyboard=True, persistent=True)
 
 def get_refresh_keyboard():
     """Кнопка обновления списка"""
