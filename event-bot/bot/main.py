@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import sys
 import os
 from aiogram import Bot, Dispatcher
 from bot.config import BOT_TOKEN
@@ -9,12 +10,14 @@ from bot.handlers import start, profile, admin
 # Создание папки для логов
 os.makedirs("logs", exist_ok=True)
 
-# Настройка логирования
+# Настройка логирования: вывод и в файл, и в консоль (для journalctl)
 logging.basicConfig(
     level=logging.INFO,
-    filename="logs/bot.log",
-    filemode="a",
-    format="%(asctime)s - %(levelname)s - %(message)s"
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler("logs/bot.log", encoding="utf-8"),
+        logging.StreamHandler(sys.stdout)
+    ]
 )
 
 async def main():
