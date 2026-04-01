@@ -4,7 +4,7 @@ import sys
 import os
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart
-from bot.config import BOT_TOKEN, ADMIN_ID, MODERATION_CHAT_ID
+from bot.config import BOT_TOKEN
 from bot.database import init_db
 from bot.handlers import start, profile, admin
 from bot.keyboards import get_main_menu_reply
@@ -39,7 +39,6 @@ aiogram_logger.addHandler(file_handler)
 aiogram_logger.addHandler(console_handler)
 
 root_logger.info("=== БОТ ЗАПУЩЕН ===")
-print(">>> TEST STDOUT MESSAGE <<<", flush=True)
 
 async def main():
     bot = Bot(token=BOT_TOKEN)
@@ -54,7 +53,14 @@ async def main():
     dp.include_router(profile.router)
     dp.include_router(admin.router)
     
-    # Обработчик команды /start с главной клавиатурой
+    # Middleware для логирования
+    @dp.middleware()
+    async def log_updates(handler, event, data):
+        if hasattr(event, 'update_id'):
+            root_logger.info(f"Update: {event.update_id}")
+        return await handler(event, data)
+    
+    # Команда /start с главной клавиатурой
     @dp.message(CommandStart())
     async def cmd_start(message: types.Message):
         await message.answer(
@@ -63,19 +69,8 @@ async def main():
         )
         root_logger.info(f"User {message.from_user.id} pressed /start")
     
-    # Обработчик текстовых кнопок главного меню
-    @dp.message(F.text == "👥 Посмотреть участников")
-    async def view_participants_button(message: types.Message):
-        await start.view_participants(message)
-    
-    @dp.message(F.text == "📝 Добавить анкету")
-    async def add_profile_button(message: types.Message):
-        await profile.start_form(message)
-    
     # Запуск
     root_logger.info("Бот запущен и готов к работе...")
-    print(">>> POLLING STARTED <<<", flush=True)
-    
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
@@ -85,4 +80,3 @@ if __name__ == "__main__":
         root_logger.info("Бот выключен пользователем")
     except Exception as e:
         root_logger.error(f"Критическая ошибка: {e}", exc_info=True)
-        print(f">>> CRITICAL ERROR: {e} <<<", flush=True)
