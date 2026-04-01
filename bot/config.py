@@ -6,7 +6,7 @@ load_dotenv()
 # Telegram
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
-MODERATION_CHAT_ID = int(os.getenv("MODERATION_CHAT_ID", ADMIN_ID))  # ID чата для модерации
+MODERATION_CHAT_ID = int(os.getenv("MODERATION_CHAT_ID", ADMIN_ID))
 
 # MySQL
 DB_CONFIG = {
