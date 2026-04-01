@@ -1,8 +1,9 @@
 import logging
 from aiogram import Router, F, types
 from aiogram.types import URLInputFile
-from bot.keyboards import get_main_menu_inline, get_refresh_keyboard
+from bot.keyboards import get_main_menu_inline, get_refresh_keyboard, get_admin_keyboard
 from bot.database import get_approved_profiles
+from bot.config import ADMIN_ID
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -63,6 +64,14 @@ async def view_participants(message: types.Message):
         parse_mode="Markdown",
         reply_markup=get_main_menu_inline()
     )
+    
+    # Если админ - показать кнопку админ-панели
+    if message.from_user.id == ADMIN_ID:
+        await message.answer(
+            "🔧 **Админ-панель:**",
+            reply_markup=get_admin_keyboard()
+        )
+    
     logger.info(f"Sent {len(profiles)} profiles to user {message.from_user.id}")
 
 @router.callback_query(F.data == "back_to_menu")
