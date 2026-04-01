@@ -53,6 +53,25 @@ async def get_approved_profiles():
     conn.close()
     return result
 
+async def get_all_approved_with_photos():
+    """Получить все одобренные профили с фото для удаления"""
+    conn = await get_connection()
+    async with conn.cursor(aiomysql.DictCursor) as cursor:
+        await cursor.execute("SELECT id, photo_url FROM profiles WHERE status = 'approved' AND photo_url IS NOT NULL")
+        result = await cursor.fetchall()
+    conn.close()
+    return result
+
+async def delete_all_approved_profiles():
+    """Удалить все одобренные профили из БД"""
+    conn = await get_connection()
+    async with conn.cursor() as cursor:
+        await cursor.execute("DELETE FROM profiles WHERE status = 'approved'")
+        deleted_count = cursor.rowcount
+        await conn.commit()
+    conn.close()
+    return deleted_count
+
 async def update_profile_status(profile_id, status, comment=None):
     conn = await get_connection()
     async with conn.cursor() as cursor:
