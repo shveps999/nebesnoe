@@ -1,7 +1,9 @@
-import logging
+mport logging
+import re
 from aiogram import Router, F, types, Bot
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from aiogram.filters import Command
 from bot.keyboards import get_cancel_keyboard, get_main_menu_inline, get_manage_profile_keyboard, get_confirm_delete_keyboard
 from bot.database import add_profile, update_profile, user_has_approved_profile, get_profile_by_tg_id, delete_profile_by_tg_id, update_profile_status
 from bot.config import ADMIN_ID, MODERATION_CHAT_ID
@@ -16,6 +18,7 @@ class ProfileForm(StatesGroup):
     name = State()
     occupation = State()
     looking = State()
+    tg_username = State()  # ← НОВОЕ: Telegram username
     photo = State()
 
 class EditForm(StatesGroup):
@@ -23,6 +26,7 @@ class EditForm(StatesGroup):
     name = State()
     occupation = State()
     looking = State()
+    tg_username = State()  # ← НОВОЕ
     photo = State()
 
 async def delete_message_safe(bot: Bot, chat_id: int, message_id: int):
@@ -31,6 +35,26 @@ async def delete_message_safe(bot: Bot, chat_id: int, message_id: int):
         await bot.delete_message(chat_id=chat_id, message_id=message_id)
     except:
         pass
+
+def validate_tg_username(text: str) -> bool:
+    """Проверяет что username начинается с @ и содержит только допустимые символы"""
+    text = text.strip()
+    if text.lower() == 'skip' or text == '/skip':
+        return True  # Пропуск разрешён
+    if not text.startswith('@'):
+        return False
+    # Проверяем формат: @username (3-32 символа, буквы, цифры, подчёркивания)
+    pattern = r'^@[a-zA-Z0-9_]{3,32}$'
+    return bool(re.match(pattern, text))
+
+def format_tg_username(text: str) -> str:
+    """Добавляет @ если нет"""
+    text = text.strip()
+    if text.lower() == 'skip' or text == '/skip':
+        return None
+    if not text.startswith('@'):
+        return '@' + text
+    return text
 
 @router.callback_query(F.data == "add_profile")
 async def add_profile_callback(callback: types.CallbackQuery, state: FSMContext):
@@ -89,9 +113,9 @@ async def edit_profile_callback(callback: types.CallbackQuery, state: FSMContext
     await state.update_data(profile_id=profile['id'])
     await delete_message_safe(callback.bot, callback.from_user.id, callback.message.message_id)
     msg = await callback.message.answer(
-        f"📝 **Редактирование анкеты**\n\n"
+        f"✏️ **Редактирование анкеты**\n\n"
         f"Текущее имя: {profile['name']}\n\n"
-        f"Введите **новое имя** (или напишите «оставить» чтобы не менять):",
+        f"Введите **новое имя** (или напишите 'оставить' чтобы не менять):",
         parse_mode="Markdown",
         reply_markup=get_cancel_keyboard()
     )
@@ -142,8 +166,8 @@ async def delete_profile_confirm(callback: types.CallbackQuery, bot: Bot):
     
     await delete_message_safe(bot, callback.from_user.id, callback.message.message_id)
     await callback.message.answer(
-        "**Анкета удалена**\n\n"
-        "Твоя анкета успешно удалена из базы данных",
+        "✅ **Анкета удалена**\n\n"
+        "Ваша анкета удалена из базы данных и хранилища.",
         parse_mode="Markdown",
         reply_markup=get_main_menu_inline()
     )
@@ -165,8 +189,8 @@ async def edit_process_name(message: types.Message, state: FSMContext, bot: Bot)
         await state.update_data(name=message.text.strip())
     
     msg = await message.answer(
-        "✍️ Имя принято.\n\n"
-        "Твое направление творчества? (или напиши «оставить» чтобы не менять):",
+        "✅ Имя принято.\n\n"
+        "Чем вы занимаетесь? (или напишите 'оставить' чтобы не менять):",
         reply_markup=get_cancel_keyboard()
     )
     await state.update_data(last_message_id=msg.message_id)
@@ -186,8 +210,8 @@ async def edit_process_occupation(message: types.Message, state: FSMContext, bot
         await state.update_data(occupation=message.text.strip())
     
     msg = await message.answer(
-        "👀 Принято.\n\n"
-        "Кого или что ищешь? (или напиши «оставить» чтобы не менять):",
+        "✅ Принято.\n\n"
+        "Кого или что вы ищете? (или напишите 'оставить' чтобы не менять):",
         reply_markup=get_cancel_keyboard()
     )
     await state.update_data(last_message_id=msg.message_id)
@@ -207,8 +231,63 @@ async def edit_process_looking(message: types.Message, state: FSMContext, bot: B
         await state.update_data(looking=message.text.strip())
     
     msg = await message.answer(
-        "💌 Записали.\n\n"
-        "📸 **Теперь прикрепи свое фото, чтобы тебя могли узнать на ивенте**\n\n",
+        "✅ Принято.\n\n"
+        "📱 **Ваш Telegram для связи**\n\n"
+        "Введите ваш никнейм в формате **@username** чтобы вам могли написать.\n\n"
+        "💡 Или напишите **/skip** чтобы пропустить:",
+        parse_mode="Markdown",
+        reply_markup=get_cancel_keyboard()
+    )
+    await state.update_data(last_message_id=msg.message_id)
+    await state.set_state(EditForm.tg_username)
+
+@router.message(EditForm.tg_username, F.text)
+async def edit_process_tg_username(message: types.Message, state: FSMContext, bot: Bot):
+    data = await state.get_data()
+    last_msg_id = data.get('last_message_id')
+    if last_msg_id:
+        await delete_message_safe(bot, message.from_user.id, last_msg_id)
+    
+    text = message.text.strip()
+    
+    # Проверяем на пропуск
+    if text.lower() == 'skip' or text == '/skip':
+        tg_username = None
+        msg = await message.answer(
+            "✅ Пропущено.\n\n"
+            "📸 **Теперь отправьте ваше фото**\n\n"
+            "⚠️ **Фото обязательно** — отправьте изображение файлом или картинкой.",
+            parse_mode="Markdown",
+            reply_markup=get_cancel_keyboard()
+        )
+        await state.update_data(last_message_id=msg.message_id)
+        await state.update_data(tg_username=None)
+        await state.set_state(EditForm.photo)
+        return
+    
+    # Проверяем формат
+    if not validate_tg_username(text):
+        msg = await message.answer(
+            "❌ **Неверный формат Telegram username**\n\n"
+            "Никнейм должен:\n"
+            "• Начинаться с **@**\n"
+            "• Содержать 3-32 символа\n"
+            "• Содержать только буквы, цифры и _\n\n"
+            "Пример: **@username**\n\n"
+            "Попробуйте еще раз или напишите **/skip**:",
+            parse_mode="Markdown",
+            reply_markup=get_cancel_keyboard()
+        )
+        await state.update_data(last_message_id=msg.message_id)
+        return
+    
+    tg_username = format_tg_username(text)
+    await state.update_data(tg_username=tg_username)
+    
+    msg = await message.answer(
+        f"✅ Принято: **{tg_username}**\n\n"
+        "📸 **Теперь отправьте ваше фото**\n\n"
+        "⚠️ **Фото обязательно** — отправьте изображение файлом или картинкой.",
         parse_mode="Markdown",
         reply_markup=get_cancel_keyboard()
     )
@@ -233,11 +312,11 @@ async def edit_process_photo(message: types.Message, state: FSMContext, bot: Bot
         photo_url = await upload_photo_to_s3(photo_id, bot)
     except Exception as e:
         logger.error(f"Ошибка загрузки в S3: {e}")
-        msg = await message.answer("❌ Ошибка загрузки фото. Попробуй еще раз.", reply_markup=get_cancel_keyboard())
+        msg = await message.answer("❌ Ошибка загрузки фото. Попробуйте еще раз.", reply_markup=get_cancel_keyboard())
         await state.update_data(last_message_id=msg.message_id)
         return
     
-    await update_profile(profile_id, data['name'], data['occupation'], data['looking'], photo_url)
+    await update_profile(profile_id, data['name'], data['occupation'], data['looking'], data.get('tg_username'), photo_url)
     await finish_edit(message, bot, profile_id, data, photo_url, state)
 
 @router.message(EditForm.photo, ~F.photo)
@@ -250,25 +329,8 @@ async def edit_process_photo_not_photo(message: types.Message, state: FSMContext
     
     msg = await message.answer(
         "❌ **Нужно отправить фото!**\n\n"
-        "📸 Пожалуйста, прикрепите изображение.\n",
-        parse_mode="Markdown",
-        reply_markup=get_cancel_keyboard()
-    )
-    await state.update_data(last_message_id=msg.message_id)
-    # Остаёмся в том же состоянии
-    await state.set_state(EditForm.photo)
-
-@router.message(EditForm.photo, F.text)
-async def edit_process_no_photo(message: types.Message, state: FSMContext, bot: Bot):
-    """Обработка текста на шаге фото — показываем ошибку"""
-    data = await state.get_data()
-    last_msg_id = data.get('last_message_id')
-    if last_msg_id:
-        await delete_message_safe(bot, message.from_user.id, last_msg_id)
-    
-    msg = await message.answer(
-        "❌ **Нужно отправить фото!**\n\n"
-        "📸 Пожалуйста, прикрепите изображение.\n",
+        "📸 Пожалуйста, прикрепите изображение.\n"
+        "Текстовые сообщения не принимаются.",
         parse_mode="Markdown",
         reply_markup=get_cancel_keyboard()
     )
@@ -280,7 +342,8 @@ async def finish_edit(message: types.Message, bot: Bot, profile_id: int, data: d
     
     if notification_sent:
         await message.answer(
-            "**Изменения приняты!**\n\n",
+            "✅ **Изменения отправлены на модерацию!**\n\n"
+            "Ожидайте решения администратора.",
             parse_mode="Markdown",
             reply_markup=get_main_menu_inline()
         )
@@ -337,7 +400,7 @@ async def process_name(message: types.Message, state: FSMContext, bot: Bot):
         return
     
     await state.update_data(name=message.text.strip())
-    msg = await message.answer("✍️ Имя принято.\n\nКакое у тебя направление деятельности?", reply_markup=get_cancel_keyboard())
+    msg = await message.answer("✅ Имя принято.\n\nЧем вы занимаетесь?", reply_markup=get_cancel_keyboard())
     await state.update_data(last_message_id=msg.message_id)
     await state.set_state(ProfileForm.occupation)
 
@@ -354,7 +417,7 @@ async def process_occupation(message: types.Message, state: FSMContext, bot: Bot
         return
     
     await state.update_data(occupation=message.text.strip())
-    msg = await message.answer("💡 Записали.\n\nКого или что ищешь?", reply_markup=get_cancel_keyboard())
+    msg = await message.answer("✅ Принято.\n\nКого или что вы ищете?", reply_markup=get_cancel_keyboard())
     await state.update_data(last_message_id=msg.message_id)
     await state.set_state(ProfileForm.looking)
 
@@ -372,8 +435,63 @@ async def process_looking(message: types.Message, state: FSMContext, bot: Bot):
     
     await state.update_data(looking=message.text.strip())
     msg = await message.answer(
-        "💌 Отлично!.\n\n"
-        "📸 **Теперь отправь свое фото, чтобы тебя могли узнать на ивенте**\n\n",
+        "✅ Принято.\n\n"
+        "📱 **Ваш Telegram для связи**\n\n"
+        "Введите ваш никнейм в формате **@username** чтобы вам могли написать.\n\n"
+        "💡 Или напишите **/skip** чтобы пропустить:",
+        parse_mode="Markdown",
+        reply_markup=get_cancel_keyboard()
+    )
+    await state.update_data(last_message_id=msg.message_id)
+    await state.set_state(ProfileForm.tg_username)
+
+@router.message(ProfileForm.tg_username, F.text)
+async def process_tg_username(message: types.Message, state: FSMContext, bot: Bot):
+    data = await state.get_data()
+    last_msg_id = data.get('last_message_id')
+    if last_msg_id:
+        await delete_message_safe(bot, message.from_user.id, last_msg_id)
+    
+    text = message.text.strip()
+    
+    # Проверяем на пропуск
+    if text.lower() == 'skip' or text == '/skip':
+        tg_username = None
+        msg = await message.answer(
+            "✅ Пропущено.\n\n"
+            "📸 **Теперь отправьте ваше фото**\n\n"
+            "⚠️ **Фото обязательно** — отправьте изображение файлом или картинкой.",
+            parse_mode="Markdown",
+            reply_markup=get_cancel_keyboard()
+        )
+        await state.update_data(last_message_id=msg.message_id)
+        await state.update_data(tg_username=None)
+        await state.set_state(ProfileForm.photo)
+        return
+    
+    # Проверяем формат
+    if not validate_tg_username(text):
+        msg = await message.answer(
+            "❌ **Неверный формат Telegram username**\n\n"
+            "Никнейм должен:\n"
+            "• Начинаться с **@**\n"
+            "• Содержать 3-32 символа\n"
+            "• Содержать только буквы, цифры и _\n\n"
+            "Пример: **@username**\n\n"
+            "Попробуйте еще раз или напишите **/skip**:",
+            parse_mode="Markdown",
+            reply_markup=get_cancel_keyboard()
+        )
+        await state.update_data(last_message_id=msg.message_id)
+        return
+    
+    tg_username = format_tg_username(text)
+    await state.update_data(tg_username=tg_username)
+    
+    msg = await message.answer(
+        f"✅ Принято: **{tg_username}**\n\n"
+        "📸 **Теперь отправьте ваше фото**\n\n"
+        "⚠️ **Фото обязательно** — отправьте изображение файлом или картинкой.",
         parse_mode="Markdown",
         reply_markup=get_cancel_keyboard()
     )
@@ -401,11 +519,12 @@ async def process_photo(message: types.Message, state: FSMContext, bot: Bot):
         name=data['name'],
         occupation=data['occupation'],
         looking=data['looking'],
+        tg_username=data.get('tg_username'),
         photo_url=photo_url
     )
     
     await message.answer(
-        "**Мы получили все даннеые и скоро опубликуем анкету в общем списке**",
+        "✅ **Анкета отправлена на модерацию!**",
         parse_mode="Markdown",
         reply_markup=get_main_menu_inline()
     )
@@ -415,30 +534,17 @@ async def process_photo(message: types.Message, state: FSMContext, bot: Bot):
 
 @router.message(ProfileForm.photo, ~F.photo)
 async def process_photo_not_photo(message: types.Message, state: FSMContext, bot: Bot):
-    """Если прислали не фото — показываем ошибку и просим фото"""
+    """Если прислали не фото — показываем ошибку"""
     data = await state.get_data()
     last_msg_id = data.get('last_message_id')
     if last_msg_id:
         await delete_message_safe(bot, message.from_user.id, last_msg_id)
     
     msg = await message.answer(
-        "📸 Пожалуйста, прикрепите изображение.\n",
-        parse_mode="Markdown",
-        reply_markup=get_cancel_keyboard()
-    )
-    await state.update_data(last_message_id=msg.message_id)
-    # Остаёмся в том же состоянии — ждём фото
-
-@router.message(ProfileForm.photo, F.text)
-async def process_no_photo(message: types.Message, state: FSMContext, bot: Bot):
-    """Обработка текста на шаге фото — показываем ошибку"""
-    data = await state.get_data()
-    last_msg_id = data.get('last_message_id')
-    if last_msg_id:
-        await delete_message_safe(bot, message.from_user.id, last_msg_id)
-    
-    msg = await message.answer(
-        "📸 Пожалуйста, прикрепите изображение.\n",
+        "❌ **Нужно отправить фото!**\n\n"
+        "📸 Пожалуйста, прикрепите изображение.\n"
+        "Текстовые сообщения не принимаются.\n\n"
+        "💡 Чтобы пропустить заполнение, нажмите **❌ Отмена**",
         parse_mode="Markdown",
         reply_markup=get_cancel_keyboard()
     )
@@ -446,13 +552,18 @@ async def process_no_photo(message: types.Message, state: FSMContext, bot: Bot):
 
 async def notify_admin(bot: Bot, user_id: int, data: dict, photo_url: str, profile_id: int) -> bool:
     """Отправить анкету на модерацию в чат. Возвращает True если успешно."""
+    tg_username = data.get('tg_username')
+    tg_line = f"\n🔗 Тг: {tg_username}" if tg_username else ""
+    
     text = (
         f"🔔 **Новая анкета на модерацию!**\n\n"
-        f"**ID:** {profile_id}\n"
-        f"**Пользователь:** {user_id}\n"
+        f"👤 **ID:** {profile_id}\n"
+        f"🆔 **Пользователь:** {user_id}\n"
         f"📛 **Имя:** {data['name']}\n"
         f"💼 **Занятие:** {data['occupation']}\n"
-        f"🔍 **Ищет:** {data['looking']}\n\n"
+        f"🔍 **Ищет:** {data['looking']}"
+        f"{tg_line}\n\n"
+        f"⏳ **Статус:** На модерации"
     )
     
     try:
@@ -500,13 +611,18 @@ async def notify_admin(bot: Bot, user_id: int, data: dict, photo_url: str, profi
 
 async def notify_admin_edit(bot: Bot, user_id: int, data: dict, photo_url: str, profile_id: int) -> bool:
     """Отправить изменения анкеты на модерацию. Возвращает True если успешно."""
+    tg_username = data.get('tg_username')
+    tg_line = f"\n🔗 Тг: {tg_username}" if tg_username else ""
+    
     text = (
         f"✏️ **Изменения анкеты на модерацию!**\n\n"
         f"👤 **ID:** {profile_id}\n"
         f"🆔 **Пользователь:** {user_id}\n"
         f"📛 **Имя:** {data['name']}\n"
         f"💼 **Занятие:** {data['occupation']}\n"
-        f"🔍 **Ищет:** {data['looking']}\n\n"
+        f"🔍 **Ищет:** {data['looking']}"
+        f"{tg_line}\n\n"
+        f"⏳ **Статус:** На модерации"
     )
     
     try:
