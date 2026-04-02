@@ -260,7 +260,7 @@ async def edit_process_no_photo(message: types.Message, state: FSMContext, bot: 
     await update_profile(profile_id, data['name'], data['occupation'], data['looking'], photo_url)
     await finish_edit(message, bot, profile_id, data, photo_url, state)
 
-async def finish_edit(message: types.Message, bot: Bot, profile_id: int,  dict, photo_url: str, state: FSMContext):
+async def finish_edit(message: types.Message, bot: Bot, profile_id: int, data: dict, photo_url: str, state: FSMContext):
     """Завершение редактирования и отправка на модерацию"""
     notification_sent = await notify_admin_edit(bot, message.from_user.id, data, photo_url, profile_id)
     
@@ -401,7 +401,7 @@ async def process_photo(message: types.Message, state: FSMContext, bot: Bot):
 
 @router.message(ProfileForm.photo, F.text)
 async def process_no_photo(message: types.Message, state: FSMContext, bot: Bot):
-    data = await state.get_data()
+    data = await state.get_data()  # ← ИСПРАВЛЕНО: получаем data из state
     last_msg_id = data.get('last_message_id')
     if last_msg_id:
         await delete_message_safe(bot, message.from_user.id, last_msg_id)
@@ -423,7 +423,7 @@ async def process_no_photo(message: types.Message, state: FSMContext, bot: Bot):
     await notify_admin(bot, message.from_user.id, data, None, profile_id)
     logger.info(f"Profile {profile_id} submitted by user {message.from_user.id} (no photo)")
 
-async def notify_admin(bot: Bot, user_id: int,  dict, photo_url: str, profile_id: int) -> bool:
+async def notify_admin(bot: Bot, user_id: int, data: dict, photo_url: str, profile_id: int) -> bool:
     """Отправить анкету на модерацию в чат. Возвращает True если успешно."""
     text = (
         f"🔔 **Новая анкета на модерацию!**\n\n"
@@ -478,7 +478,7 @@ async def notify_admin(bot: Bot, user_id: int,  dict, photo_url: str, profile_id
         logger.error(f"Фоллбэк уведомление тоже не отправлено: {e2}")
         return False
 
-async def notify_admin_edit(bot: Bot, user_id: int,  dict, photo_url: str, profile_id: int) -> bool:
+async def notify_admin_edit(bot: Bot, user_id: int, data: dict, photo_url: str, profile_id: int) -> bool:
     """Отправить изменения анкеты на модерацию. Возвращает True если успешно."""
     text = (
         f"✏️ **Изменения анкеты на модерацию!**\n\n"
