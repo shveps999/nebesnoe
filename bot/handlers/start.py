@@ -139,17 +139,12 @@ async def refresh_list_callback(callback: types.CallbackQuery, bot: Bot):
 
 @router.callback_query(F.data == "back_to_menu")
 async def back_to_menu_callback(callback: types.CallbackQuery, bot: Bot):
-    """Вернуться в меню (удаляет предыдущее и показывает чистое)"""
+    """Вернуться в меню (удаляет список анкет и показывает чистое меню)"""
     user_tg_id = callback.from_user.id
     
-    # 1. Удаляем предыдущее меню (если есть запись в БД)
-    last_menu_id = await get_user_last_message(user_tg_id)
-    if last_menu_id:
-        await delete_message_safe(bot, user_tg_id, last_menu_id)
-    
-    # 2. Безопасно удаляем сообщение с кнопкой
+    # 1. Безопасно удаляем сообщение с кнопкой "В главное меню"
     await delete_message_safe(bot, user_tg_id, callback.message.message_id)
     
-    # 3. Показываем чистое меню
-    await send_main_menu(callback.message, bot, delete_old=False)
+    # 2. Показываем чистое меню (оно удалит предыдущее меню из БД)
+    await send_main_menu(callback.message, bot, delete_old=True)
     await callback.answer()
