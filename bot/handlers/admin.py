@@ -134,9 +134,9 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot):
     await bot.send_message(
         chat_id=profile['tg_id'],
         text=(
-            "✅ **Ваша анкета одобрена!**\n\n"
-            "Теперь вы можете просматривать анкеты других участников.\n\n"
-            "Спасибо за участие! 🎉"
+            "**Ваша анкета опубликована!**\n\n"
+            "Теперь вы можете просматривать список участников.\n\n"
+            "До встречи в Небесном! 🎉"
         ),
         parse_mode="Markdown",
         reply_markup=get_main_menu_inline(has_profile=True)
@@ -149,7 +149,7 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot):
     except Exception as e:
         logger.error(f"Не удалось удалить сообщение модерации: {e}")
     
-    await callback.answer("✅ Анкета одобрена и опубликована!")
+    await callback.answer("Анкета опубликована!")
     logger.info(f"Profile {profile_id} approved by admin {callback.from_user.id}")
 
 @router.callback_query(F.data.startswith("admin_edit_"))
@@ -195,8 +195,8 @@ async def admin_send_comment(message: types.Message, state: FSMContext, bot: Bot
     await bot.send_message(
         chat_id=profile['tg_id'],
         text=(
-            f"⚠️ **Администратор запросил изменения**\n\n"
-            f"💬 **Комментарий:**\n{comment}\n\n"
+            f"⚠️ **Организатор запросил изменения**\n\n"
+            f"**Комментарий:**\n{comment}\n\n"
             f"Пожалуйста, заполните анкету заново через меню."
         ),
         parse_mode="Markdown",
