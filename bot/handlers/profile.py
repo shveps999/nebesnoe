@@ -89,9 +89,9 @@ async def edit_profile_callback(callback: types.CallbackQuery, state: FSMContext
     await state.update_data(profile_id=profile['id'])
     await delete_message_safe(callback.bot, callback.from_user.id, callback.message.message_id)
     msg = await callback.message.answer(
-        f"✏️ **Редактирование анкеты**\n\n"
+        f"📝 **Редактирование анкеты**\n\n"
         f"Текущее имя: {profile['name']}\n\n"
-        f"Введите **новое имя** (или напишите 'оставить' чтобы не менять):",
+        f"Введите **новое имя** (или напишите «оставить» чтобы не менять):",
         parse_mode="Markdown",
         reply_markup=get_cancel_keyboard()
     )
@@ -142,8 +142,8 @@ async def delete_profile_confirm(callback: types.CallbackQuery, bot: Bot):
     
     await delete_message_safe(bot, callback.from_user.id, callback.message.message_id)
     await callback.message.answer(
-        "✅ **Анкета удалена**\n\n"
-        "Ваша анкета удалена из базы данных и хранилища.",
+        "**Анкета удалена**\n\n"
+        "Твоя анкета успешно удалена из базы данных",
         parse_mode="Markdown",
         reply_markup=get_main_menu_inline()
     )
@@ -165,8 +165,8 @@ async def edit_process_name(message: types.Message, state: FSMContext, bot: Bot)
         await state.update_data(name=message.text.strip())
     
     msg = await message.answer(
-        "✅ Имя принято.\n\n"
-        "Чем вы занимаетесь? (или напишите 'оставить' чтобы не менять):",
+        "✍️ Имя принято.\n\n"
+        "Твое направление творчества? (или напиши «оставить» чтобы не менять):",
         reply_markup=get_cancel_keyboard()
     )
     await state.update_data(last_message_id=msg.message_id)
@@ -186,8 +186,8 @@ async def edit_process_occupation(message: types.Message, state: FSMContext, bot
         await state.update_data(occupation=message.text.strip())
     
     msg = await message.answer(
-        "✅ Принято.\n\n"
-        "Кого или что вы ищете? (или напишите 'оставить' чтобы не менять):",
+        "👀 Принято.\n\n"
+        "Кого или что ищешь? (или напиши «оставить» чтобы не менять):",
         reply_markup=get_cancel_keyboard()
     )
     await state.update_data(last_message_id=msg.message_id)
@@ -207,9 +207,8 @@ async def edit_process_looking(message: types.Message, state: FSMContext, bot: B
         await state.update_data(looking=message.text.strip())
     
     msg = await message.answer(
-        "✅ Принято.\n\n"
-        "📸 **Теперь отправьте ваше фото**\n\n"
-        "⚠️ **Фото обязательно** — отправьте изображение файлом или картинкой.",
+        "💌 Записали.\n\n"
+        "📸 **Теперь прикрепи свое фото, чтобы тебя могли узнать на ивенте**\n\n",
         parse_mode="Markdown",
         reply_markup=get_cancel_keyboard()
     )
@@ -234,7 +233,7 @@ async def edit_process_photo(message: types.Message, state: FSMContext, bot: Bot
         photo_url = await upload_photo_to_s3(photo_id, bot)
     except Exception as e:
         logger.error(f"Ошибка загрузки в S3: {e}")
-        msg = await message.answer("❌ Ошибка загрузки фото. Попробуйте еще раз.", reply_markup=get_cancel_keyboard())
+        msg = await message.answer("❌ Ошибка загрузки фото. Попробуй еще раз.", reply_markup=get_cancel_keyboard())
         await state.update_data(last_message_id=msg.message_id)
         return
     
@@ -251,8 +250,7 @@ async def edit_process_photo_not_photo(message: types.Message, state: FSMContext
     
     msg = await message.answer(
         "❌ **Нужно отправить фото!**\n\n"
-        "📸 Пожалуйста, прикрепите изображение.\n"
-        "Текстовые сообщения не принимаются.",
+        "📸 Пожалуйста, прикрепите изображение.\n",
         parse_mode="Markdown",
         reply_markup=get_cancel_keyboard()
     )
@@ -270,8 +268,7 @@ async def edit_process_no_photo(message: types.Message, state: FSMContext, bot: 
     
     msg = await message.answer(
         "❌ **Нужно отправить фото!**\n\n"
-        "📸 Пожалуйста, прикрепите изображение.\n"
-        "Текстовые сообщения не принимаются.",
+        "📸 Пожалуйста, прикрепите изображение.\n",
         parse_mode="Markdown",
         reply_markup=get_cancel_keyboard()
     )
@@ -283,8 +280,7 @@ async def finish_edit(message: types.Message, bot: Bot, profile_id: int, data: d
     
     if notification_sent:
         await message.answer(
-            "✅ **Изменения отправлены на модерацию!**\n\n"
-            "Ожидайте решения администратора.",
+            "**Изменения приняты!**\n\n",
             parse_mode="Markdown",
             reply_markup=get_main_menu_inline()
         )
@@ -341,7 +337,7 @@ async def process_name(message: types.Message, state: FSMContext, bot: Bot):
         return
     
     await state.update_data(name=message.text.strip())
-    msg = await message.answer("✅ Имя принято.\n\nЧем вы занимаетесь?", reply_markup=get_cancel_keyboard())
+    msg = await message.answer("✍️ Имя принято.\n\nКакое у тебя направление деятельности?", reply_markup=get_cancel_keyboard())
     await state.update_data(last_message_id=msg.message_id)
     await state.set_state(ProfileForm.occupation)
 
@@ -358,7 +354,7 @@ async def process_occupation(message: types.Message, state: FSMContext, bot: Bot
         return
     
     await state.update_data(occupation=message.text.strip())
-    msg = await message.answer("✅ Принято.\n\nКого или что вы ищете?", reply_markup=get_cancel_keyboard())
+    msg = await message.answer("💡 Записали.\n\nКого или что ищешь?", reply_markup=get_cancel_keyboard())
     await state.update_data(last_message_id=msg.message_id)
     await state.set_state(ProfileForm.looking)
 
@@ -376,10 +372,8 @@ async def process_looking(message: types.Message, state: FSMContext, bot: Bot):
     
     await state.update_data(looking=message.text.strip())
     msg = await message.answer(
-        "✅ Принято.\n\n"
-        "📸 **Теперь отправьте ваше фото**\n\n"
-        "⚠️ **Фото обязательно** — отправьте изображение файлом или картинкой.\n"
-        "❌ Пропустить этот шаг нельзя.",
+        "💌 Отлично!.\n\n"
+        "📸 **Теперь отправь свое фото, чтобы тебя могли узнать на ивенте**\n\n",
         parse_mode="Markdown",
         reply_markup=get_cancel_keyboard()
     )
@@ -411,7 +405,7 @@ async def process_photo(message: types.Message, state: FSMContext, bot: Bot):
     )
     
     await message.answer(
-        "✅ **Анкета отправлена на модерацию!**",
+        "**Мы получили все даннеые и скоро опубликуем анкету в общем списке**",
         parse_mode="Markdown",
         reply_markup=get_main_menu_inline()
     )
@@ -428,10 +422,7 @@ async def process_photo_not_photo(message: types.Message, state: FSMContext, bot
         await delete_message_safe(bot, message.from_user.id, last_msg_id)
     
     msg = await message.answer(
-        "❌ **Нужно отправить фото!**\n\n"
-        "📸 Пожалуйста, прикрепите изображение.\n"
-        "Текстовые сообщения не принимаются.\n\n"
-        "💡 Чтобы пропустить заполнение, нажмите **❌ Отмена**",
+        "📸 Пожалуйста, прикрепите изображение.\n",
         parse_mode="Markdown",
         reply_markup=get_cancel_keyboard()
     )
@@ -447,10 +438,7 @@ async def process_no_photo(message: types.Message, state: FSMContext, bot: Bot):
         await delete_message_safe(bot, message.from_user.id, last_msg_id)
     
     msg = await message.answer(
-        "❌ **Нужно отправить фото!**\n\n"
-        "📸 Пожалуйста, прикрепите изображение.\n"
-        "Текстовые сообщения не принимаются.\n\n"
-        "💡 Чтобы пропустить заполнение, нажмите **❌ Отмена**",
+        "📸 Пожалуйста, прикрепите изображение.\n",
         parse_mode="Markdown",
         reply_markup=get_cancel_keyboard()
     )
@@ -460,12 +448,11 @@ async def notify_admin(bot: Bot, user_id: int, data: dict, photo_url: str, profi
     """Отправить анкету на модерацию в чат. Возвращает True если успешно."""
     text = (
         f"🔔 **Новая анкета на модерацию!**\n\n"
-        f"👤 **ID:** {profile_id}\n"
-        f"🆔 **Пользователь:** {user_id}\n"
+        f"**ID:** {profile_id}\n"
+        f"**Пользователь:** {user_id}\n"
         f"📛 **Имя:** {data['name']}\n"
         f"💼 **Занятие:** {data['occupation']}\n"
         f"🔍 **Ищет:** {data['looking']}\n\n"
-        f"⏳ **Статус:** На модерации"
     )
     
     try:
@@ -520,7 +507,6 @@ async def notify_admin_edit(bot: Bot, user_id: int, data: dict, photo_url: str, 
         f"📛 **Имя:** {data['name']}\n"
         f"💼 **Занятие:** {data['occupation']}\n"
         f"🔍 **Ищет:** {data['looking']}\n\n"
-        f"⏳ **Статус:** На модерации"
     )
     
     try:
