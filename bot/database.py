@@ -22,13 +22,39 @@ async def init_db():
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             )
         """)
+        await cursor.execute("""
+            CREATE TABLE IF NOT EXISTS user_messages (
+                tg_id BIGINT PRIMARY KEY,
+                last_menu_message_id INT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            )
+        """)
         await conn.commit()
     conn.close()
+
+async def save_user_message(tg_id: int, message_id: int):
+    """Сохранить ID последнего сообщения меню пользователя"""
+    conn = await get_connection()
+    async with conn.cursor() as cursor:
+        await cursor.execute(
+            "INSERT INTO user_messages (tg_id, last_menu_message_id) VALUES (%s, %s) ON DUPLICATE KEY UPDATE last_menu_message_id = %s",
+            (tg_id, message_id, message_id)
+        )
+        await conn.commit()
+    conn.close()
+
+async def get_user_last_message(tg_id: int) -> int:
+    """Получить ID последнего сообщения меню пользователя"""
+    conn = await get_connection()
+    async with conn.cursor() as cursor:
+        await cursor.execute("SELECT last_menu_message_id FROM user_messages WHERE tg_id = %s", (tg_id,))
+        result = await cursor.fetchone()
+    conn.close()
+    return result[0] if result else None
 
 async def add_profile(tg_id, name, occupation, looking, photo_url):
     conn = await get_connection()
     async with conn.cursor() as cursor:
-        # Сначала удаляем старую анкету пользователя если есть
         await cursor.execute("DELETE FROM profiles WHERE tg_id = %s", (tg_id,))
         await cursor.execute(
             "INSERT INTO profiles (tg_id, name, occupation, looking, photo_url, status) VALUES (%s, %s, %s, %s, %s, 'pending')",
@@ -40,7 +66,6 @@ async def add_profile(tg_id, name, occupation, looking, photo_url):
     return profile_id
 
 async def update_profile(profile_id, name, occupation, looking, photo_url):
-    """Обновить существующую анкету"""
     conn = await get_connection()
     async with conn.cursor() as cursor:
         await cursor.execute(
@@ -51,7 +76,6 @@ async def update_profile(profile_id, name, occupation, looking, photo_url):
     conn.close()
 
 async def delete_profile_by_tg_id(tg_id):
-    """Удалить анкету пользователя по Telegram ID"""
     conn = await get_connection()
     async with conn.cursor() as cursor:
         await cursor.execute("SELECT photo_url FROM profiles WHERE tg_id = %s AND status = 'approved'", (tg_id,))
@@ -81,7 +105,6 @@ async def get_approved_profiles():
     return result
 
 async def get_all_approved_with_photos():
-    """Получить все одобренные профили с фото для удаления"""
     conn = await get_connection()
     async with conn.cursor(aiomysql.DictCursor) as cursor:
         await cursor.execute("SELECT id, photo_url FROM profiles WHERE status = 'approved' AND photo_url IS NOT NULL")
@@ -90,7 +113,6 @@ async def get_all_approved_with_photos():
     return result
 
 async def delete_all_approved_profiles():
-    """Удалить все одобренные профили из БД"""
     conn = await get_connection()
     async with conn.cursor() as cursor:
         await cursor.execute("DELETE FROM profiles WHERE status = 'approved'")
@@ -118,7 +140,6 @@ async def get_profile_by_id(profile_id):
     return result
 
 async def get_profile_by_tg_id(tg_id):
-    """Получить профиль пользователя по Telegram ID"""
     conn = await get_connection()
     async with conn.cursor(aiomysql.DictCursor) as cursor:
         await cursor.execute("SELECT * FROM profiles WHERE tg_id = %s ORDER BY id DESC LIMIT 1", (tg_id,))
@@ -127,7 +148,6 @@ async def get_profile_by_tg_id(tg_id):
     return result
 
 async def user_has_approved_profile(tg_id):
-    """Проверить, есть ли у пользователя одобренная анкета"""
     conn = await get_connection()
     async with conn.cursor() as cursor:
         await cursor.execute(
