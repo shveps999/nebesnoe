@@ -26,7 +26,7 @@ class EditForm(StatesGroup):
     photo = State()
 
 @router.callback_query(F.data == "add_profile")
-async def add_profile_callback(callback: types.CallbackQuery):
+async def add_profile_callback(callback: types.CallbackQuery, state: FSMContext):
     """Обработка кнопки 'Добавить анкету'"""
     has_profile = await user_has_approved_profile(callback.from_user.id)
     
@@ -42,11 +42,11 @@ async def add_profile_callback(callback: types.CallbackQuery):
         return
     
     await callback.message.delete()
-    await start_form(callback.message, callback.state)
+    await start_form(callback.message, state)
     await callback.answer()
 
 @router.callback_query(F.data == "manage_profile")
-async def manage_profile_callback(callback: types.CallbackQuery):
+async def manage_profile_callback(callback: types.CallbackQuery, state: FSMContext):
     """Обработка кнопки 'Управление анкетой'"""
     has_profile = await user_has_approved_profile(callback.from_user.id)
     
@@ -148,7 +148,6 @@ async def delete_profile_confirm(callback: types.CallbackQuery, bot: Bot):
 @router.message(EditForm.name, F.text)
 async def edit_process_name(message: types.Message, state: FSMContext):
     if message.text.lower() == 'оставить':
-        data = await state.get_data()
         profile = await get_profile_by_tg_id(message.from_user.id)
         await state.update_data(name=profile['name'])
     else:
@@ -164,7 +163,6 @@ async def edit_process_name(message: types.Message, state: FSMContext):
 @router.message(EditForm.occupation, F.text)
 async def edit_process_occupation(message: types.Message, state: FSMContext):
     if message.text.lower() == 'оставить':
-        data = await state.get_data()
         profile = await get_profile_by_tg_id(message.from_user.id)
         await state.update_data(occupation=profile['occupation'])
     else:
@@ -180,7 +178,6 @@ async def edit_process_occupation(message: types.Message, state: FSMContext):
 @router.message(EditForm.looking, F.text)
 async def edit_process_looking(message: types.Message, state: FSMContext):
     if message.text.lower() == 'оставить':
-        data = await state.get_data()
         profile = await get_profile_by_tg_id(message.from_user.id)
         await state.update_data(looking=profile['looking'])
     else:
@@ -234,7 +231,7 @@ async def edit_process_no_photo(message: types.Message, state: FSMContext, bot: 
     await update_profile(profile_id, data['name'], data['occupation'], data['looking'], photo_url)
     await finish_edit(message, bot, profile_id, data, photo_url)
 
-async def finish_edit(message: types.Message, bot: Bot, profile_id: int,  dict, photo_url: str):
+async def finish_edit(message: types.Message, bot: Bot, profile_id: int, data: dict, photo_url: str):
     """Завершение редактирования и отправка на модерацию"""
     await message.answer(
         "✅ **Изменения отправлены на модерацию!**\n\n"
@@ -242,9 +239,7 @@ async def finish_edit(message: types.Message, bot: Bot, profile_id: int,  dict, 
         parse_mode="Markdown",
         reply_markup=get_main_menu_inline()
     )
-    await state.clear()
-    
-    # Отправляем на модерацию
+    await message.bot.close()  # Close session if needed
     await notify_admin_edit(bot, message.from_user.id, data, photo_url, profile_id)
     logger.info(f"Profile {profile_id} edit submitted by user {message.from_user.id}")
 
@@ -354,7 +349,7 @@ async def process_no_photo(message: types.Message, state: FSMContext, bot: Bot):
     await notify_admin(bot, message.from_user.id, data, None, profile_id)
     logger.info(f"Profile {profile_id} submitted by user {message.from_user.id} (no photo)")
 
-async def notify_admin(bot: Bot, user_id: int,  dict, photo_url: str, profile_id: int):
+async def notify_admin(bot: Bot, user_id: int, data: dict, photo_url: str, profile_id: int):
     """Отправить анкету на модерацию в чат"""
     text = (
         f"🔔 **Новая анкета на модерацию!**\n\n"
@@ -386,7 +381,7 @@ async def notify_admin(bot: Bot, user_id: int,  dict, photo_url: str, profile_id
     except Exception as e:
         logger.error(f"Ошибка отправки уведомления админу: {e}")
 
-async def notify_admin_edit(bot: Bot, user_id: int,  dict, photo_url: str, profile_id: int):
+async def notify_admin_edit(bot: Bot, user_id: int, data: dict, photo_url: str, profile_id: int):
     """Отправить изменения анкеты на модерацию"""
     text = (
         f"✏️ **Изменения анкеты на модерацию!**\n\n"
