@@ -20,6 +20,9 @@ async def send_main_menu(message: types.Message, bot: Bot, delete_old: bool = Tr
     """Отправить главное меню, удалив предыдущее"""
     tg_id = message.from_user.id
     
+    # Проверяем, есть ли у пользователя одобренная анкета
+    has_profile = await user_has_approved_profile(tg_id)
+    
     # Удаляем предыдущее меню если нужно
     if delete_old:
         last_menu_id = await get_user_last_message(tg_id)
@@ -27,7 +30,6 @@ async def send_main_menu(message: types.Message, bot: Bot, delete_old: bool = Tr
             await delete_message_safe(bot, tg_id, last_menu_id)
     
     # Отправляем новое меню
-    has_profile = await user_has_approved_profile(tg_id)
     new_message = await message.answer(
         "🏠 **Главное меню**\n\nВыберите действие:",
         parse_mode="Markdown",
@@ -116,7 +118,7 @@ async def view_participants_callback(callback: types.CallbackQuery, bot: Bot):
     if last_menu_id:
         await delete_message_safe(bot, user_tg_id, last_menu_id)
     
-    # 2. Безопасно удаляем сообщение с кнопкой (может быть уже удалено)
+    # 2. Безопасно удаляем сообщение с кнопкой
     await delete_message_safe(bot, user_tg_id, callback.message.message_id)
     
     # 3. Показываем список
@@ -131,7 +133,7 @@ async def refresh_list_callback(callback: types.CallbackQuery, bot: Bot):
     # Безопасно удаляем предыдущее сообщение с кнопками
     await delete_message_safe(bot, user_tg_id, callback.message.message_id)
     
-    # Показываем новый список (он удалит старое меню)
+    # Показываем новый список
     await send_participants_list(callback.message, bot, user_tg_id)
     await callback.answer("Список обновлён! 🔄")
 
@@ -148,6 +150,6 @@ async def back_to_menu_callback(callback: types.CallbackQuery, bot: Bot):
     # 2. Безопасно удаляем сообщение с кнопкой
     await delete_message_safe(bot, user_tg_id, callback.message.message_id)
     
-    # 3. Показываем чистое меню (delete_old=False т.к. уже удалили)
+    # 3. Показываем чистое меню
     await send_main_menu(callback.message, bot, delete_old=False)
     await callback.answer()
