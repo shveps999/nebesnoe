@@ -116,8 +116,8 @@ async def view_participants_callback(callback: types.CallbackQuery, bot: Bot):
     if last_menu_id:
         await delete_message_safe(bot, user_tg_id, last_menu_id)
     
-    # 2. Удаляем сообщение с кнопкой (которое нажал пользователь)
-    await callback.message.delete()
+    # 2. Безопасно удаляем сообщение с кнопкой (может быть уже удалено)
+    await delete_message_safe(bot, user_tg_id, callback.message.message_id)
     
     # 3. Показываем список
     await send_participants_list(callback.message, bot, user_tg_id)
@@ -128,12 +128,8 @@ async def refresh_list_callback(callback: types.CallbackQuery, bot: Bot):
     """Обновить список"""
     user_tg_id = callback.from_user.id
     
-    # Удаляем предыдущее сообщение с кнопками "Конец списка"
-    try:
-        # Пробуем удалить последнее сообщение (с кнопками)
-        await callback.message.delete()
-    except:
-        pass
+    # Безопасно удаляем предыдущее сообщение с кнопками
+    await delete_message_safe(bot, user_tg_id, callback.message.message_id)
     
     # Показываем новый список (он удалит старое меню)
     await send_participants_list(callback.message, bot, user_tg_id)
@@ -149,8 +145,8 @@ async def back_to_menu_callback(callback: types.CallbackQuery, bot: Bot):
     if last_menu_id:
         await delete_message_safe(bot, user_tg_id, last_menu_id)
     
-    # 2. Удаляем сообщение с кнопкой "В главное меню"
-    await callback.message.delete()
+    # 2. Безопасно удаляем сообщение с кнопкой
+    await delete_message_safe(bot, user_tg_id, callback.message.message_id)
     
     # 3. Показываем чистое меню (delete_old=False т.к. уже удалили)
     await send_main_menu(callback.message, bot, delete_old=False)
