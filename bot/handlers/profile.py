@@ -8,7 +8,6 @@ from bot.config import ADMIN_ID, MODERATION_CHAT_ID
 from bot.s3_storage import upload_photo_to_s3, delete_photo_from_s3
 from bot.keyboards import get_moderation_keyboard
 from aiogram.types import URLInputFile
-from bot.handlers.start import send_main_menu
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -26,6 +25,13 @@ class EditForm(StatesGroup):
     looking = State()
     photo = State()
 
+async def delete_message_safe(bot: Bot, chat_id: int, message_id: int):
+    """Безопасное удаление сообщения"""
+    try:
+        await bot.delete_message(chat_id=chat_id, message_id=message_id)
+    except:
+        pass
+
 @router.callback_query(F.data == "add_profile")
 async def add_profile_callback(callback: types.CallbackQuery, state: FSMContext):
     """Обработка кнопки 'Добавить анкету'"""
@@ -42,8 +48,8 @@ async def add_profile_callback(callback: types.CallbackQuery, state: FSMContext)
         await callback.answer()
         return
     
-    await callback.message.delete()
-    await start_form(callback.message, state)
+    await delete_message_safe(callback.bot, callback.from_user.id, callback.message.message_id)
+    await start_form(callback.message, state, callback.bot)
     await callback.answer()
 
 @router.callback_query(F.data == "manage_profile")
@@ -59,7 +65,7 @@ async def manage_profile_callback(callback: types.CallbackQuery, state: FSMConte
         await callback.answer()
         return
     
-    await callback.message.delete()
+    await delete_message_safe(callback.bot, callback.from_user.id, callback.message.message_id)
     await callback.message.answer(
         "⚙️ **Управление анкетой**\n\nВыберите действие:",
         parse_mode="Markdown",
@@ -81,14 +87,15 @@ async def edit_profile_callback(callback: types.CallbackQuery, state: FSMContext
         return
     
     await state.update_data(profile_id=profile['id'])
-    await callback.message.delete()
-    await callback.message.answer(
+    await delete_message_safe(callback.bot, callback.from_user.id, callback.message.message_id)
+    msg = await callback.message.answer(
         f"✏️ **Редактирование анкеты**\n\n"
         f"Текущее имя: {profile['name']}\n\n"
         f"Введите **новое имя** (или напишите 'оставить' чтобы не менять):",
         parse_mode="Markdown",
         reply_markup=get_cancel_keyboard()
     )
+    await state.update_data(last_message_id=msg.message_id)
     await state.set_state(EditForm.name)
     await callback.answer()
 
@@ -105,7 +112,7 @@ async def delete_profile_callback(callback: types.CallbackQuery):
         await callback.answer()
         return
     
-    await callback.message.delete()
+    await delete_message_safe(callback.bot, callback.from_user.id, callback.message.message_id)
     await callback.message.answer(
         "⚠️ **Удаление анкеты**\n\n"
         "Вы уверены, что хотите удалить свою анкету?\n\n"
@@ -128,14 +135,12 @@ async def delete_profile_confirm(callback: types.CallbackQuery, bot: Bot):
         await callback.answer()
         return
     
-    # Удаляем фото из S3
     if profile['photo_url']:
         await delete_photo_from_s3(profile['photo_url'])
     
-    # Удаляем из БД
     deleted_count, _ = await delete_profile_by_tg_id(callback.from_user.id)
     
-    await callback.message.delete()
+    await delete_message_safe(bot, callback.from_user.id, callback.message.message_id)
     await callback.message.answer(
         "✅ **Анкета удалена**\n\n"
         "Ваша анкета удалена из базы данных и хранилища.",
@@ -147,65 +152,84 @@ async def delete_profile_confirm(callback: types.CallbackQuery, bot: Bot):
     await callback.answer()
 
 @router.message(EditForm.name, F.text)
-async def edit_process_name(message: types.Message, state: FSMContext):
+async def edit_process_name(message: types.Message, state: FSMContext, bot: Bot):
+    data = await state.get_data()
+    last_msg_id = data.get('last_message_id')
+    if last_msg_id:
+        await delete_message_safe(bot, message.from_user.id, last_msg_id)
+    
     if message.text.lower() == 'оставить':
         profile = await get_profile_by_tg_id(message.from_user.id)
         await state.update_data(name=profile['name'] if profile else '')
     else:
         await state.update_data(name=message.text.strip())
     
-    await message.answer(
+    msg = await message.answer(
         "✅ Имя принято.\n\n"
         "Чем вы занимаетесь? (или напишите 'оставить' чтобы не менять):",
         reply_markup=get_cancel_keyboard()
     )
+    await state.update_data(last_message_id=msg.message_id)
     await state.set_state(EditForm.occupation)
 
 @router.message(EditForm.occupation, F.text)
-async def edit_process_occupation(message: types.Message, state: FSMContext):
+async def edit_process_occupation(message: types.Message, state: FSMContext, bot: Bot):
+    data = await state.get_data()
+    last_msg_id = data.get('last_message_id')
+    if last_msg_id:
+        await delete_message_safe(bot, message.from_user.id, last_msg_id)
+    
     if message.text.lower() == 'оставить':
         profile = await get_profile_by_tg_id(message.from_user.id)
         await state.update_data(occupation=profile['occupation'] if profile else '')
     else:
         await state.update_data(occupation=message.text.strip())
     
-    await message.answer(
+    msg = await message.answer(
         "✅ Принято.\n\n"
         "Кого или что вы ищете? (или напишите 'оставить' чтобы не менять):",
         reply_markup=get_cancel_keyboard()
     )
+    await state.update_data(last_message_id=msg.message_id)
     await state.set_state(EditForm.looking)
 
 @router.message(EditForm.looking, F.text)
-async def edit_process_looking(message: types.Message, state: FSMContext):
+async def edit_process_looking(message: types.Message, state: FSMContext, bot: Bot):
+    data = await state.get_data()
+    last_msg_id = data.get('last_message_id')
+    if last_msg_id:
+        await delete_message_safe(bot, message.from_user.id, last_msg_id)
+    
     if message.text.lower() == 'оставить':
         profile = await get_profile_by_tg_id(message.from_user.id)
         await state.update_data(looking=profile['looking'] if profile else '')
     else:
         await state.update_data(looking=message.text.strip())
     
-    await message.answer(
+    msg = await message.answer(
         "✅ Принято.\n\n"
         "Отправьте **новое фото** (или напишите 'оставить' чтобы не менять):",
         parse_mode="Markdown",
         reply_markup=get_cancel_keyboard()
     )
+    await state.update_data(last_message_id=msg.message_id)
     await state.set_state(EditForm.photo)
 
 @router.message(EditForm.photo, F.photo)
 async def edit_process_photo(message: types.Message, state: FSMContext, bot: Bot):
     data = await state.get_data()
+    last_msg_id = data.get('last_message_id')
+    if last_msg_id:
+        await delete_message_safe(bot, message.from_user.id, last_msg_id)
+    
     profile_id = data.get('profile_id')
     profile = await get_profile_by_tg_id(message.from_user.id)
     
-    # Удаляем старое фото из S3
     if profile and profile['photo_url']:
         await delete_photo_from_s3(profile['photo_url'])
     
-    # Загружаем новое
     photo_id = message.photo[-1].file_id
     try:
-        await message.answer("⏳ Загрузка фото...", reply_markup=get_main_menu_inline())
         photo_url = await upload_photo_to_s3(photo_id, bot)
     except Exception as e:
         logger.error(f"Ошибка загрузки в S3: {e}")
@@ -219,6 +243,10 @@ async def edit_process_photo(message: types.Message, state: FSMContext, bot: Bot
 @router.message(EditForm.photo, F.text)
 async def edit_process_no_photo(message: types.Message, state: FSMContext, bot: Bot):
     data = await state.get_data()
+    last_msg_id = data.get('last_message_id')
+    if last_msg_id:
+        await delete_message_safe(bot, message.from_user.id, last_msg_id)
+    
     profile_id = data.get('profile_id')
     profile = await get_profile_by_tg_id(message.from_user.id)
     
@@ -232,10 +260,8 @@ async def edit_process_no_photo(message: types.Message, state: FSMContext, bot: 
     await update_profile(profile_id, data['name'], data['occupation'], data['looking'], photo_url)
     await finish_edit(message, bot, profile_id, data, photo_url, state)
 
-async def finish_edit(message: types.Message, bot: Bot, profile_id: int, data: dict, photo_url: str, state: FSMContext):
+async def finish_edit(message: types.Message, bot: Bot, profile_id: int,  dict, photo_url: str, state: FSMContext):
     """Завершение редактирования и отправка на модерацию"""
-    
-    # Сначала отправляем уведомление админу
     notification_sent = await notify_admin_edit(bot, message.from_user.id, data, photo_url, profile_id)
     
     if notification_sent:
@@ -247,9 +273,7 @@ async def finish_edit(message: types.Message, bot: Bot, profile_id: int, data: d
         )
         logger.info(f"Profile {profile_id} edit submitted by user {message.from_user.id}")
     else:
-        # ❌ Если не удалось отправить — ОТКАТЫВАЕМ изменения!
         await update_profile_status(profile_id, 'approved')
-        
         await message.answer(
             "⚠️ **Временная ошибка связи с сервером**\n\n"
             "Изменения не отправлены. Ваша анкета осталась без изменений.\n\n"
@@ -263,62 +287,94 @@ async def finish_edit(message: types.Message, bot: Bot, profile_id: int, data: d
 
 @router.callback_query(F.data == "cancel_process")
 async def cancel_process(callback: types.CallbackQuery, state: FSMContext, bot: Bot):
+    data = await state.get_data()
+    last_msg_id = data.get('last_message_id')
+    if last_msg_id:
+        await delete_message_safe(bot, callback.from_user.id, last_msg_id)
+    
     await state.clear()
     has_profile = await user_has_approved_profile(callback.from_user.id)
-    await send_main_menu(callback.message, bot)
+    await callback.message.answer(
+        "❌ Отменено.",
+        reply_markup=get_main_menu_inline(has_profile)
+    )
     await callback.answer()
 
-async def start_form(message: types.Message, state: FSMContext):
+async def start_form(message: types.Message, state: FSMContext, bot: Bot):
     """Начало заполнения анкеты"""
-    await message.answer(
+    msg = await message.answer(
         "📝 **Заполнение анкеты**\n\nВведите ваше **Имя**:",
         parse_mode="Markdown",
         reply_markup=get_cancel_keyboard()
     )
+    await state.update_data(last_message_id=msg.message_id)
     await state.set_state(ProfileForm.name)
     logger.info(f"Started profile form for user {message.from_user.id}")
 
 @router.message(ProfileForm.name, F.text)
-async def process_name(message: types.Message, state: FSMContext):
+async def process_name(message: types.Message, state: FSMContext, bot: Bot):
+    data = await state.get_data()
+    last_msg_id = data.get('last_message_id')
+    if last_msg_id:
+        await delete_message_safe(bot, message.from_user.id, last_msg_id)
+    
     if len(message.text.strip()) < 2:
-        await message.answer("❌ Имя слишком короткое.", reply_markup=get_cancel_keyboard())
+        msg = await message.answer("❌ Имя слишком короткое.", reply_markup=get_cancel_keyboard())
+        await state.update_data(last_message_id=msg.message_id)
         return
     
     await state.update_data(name=message.text.strip())
-    await message.answer("✅ Имя принято.\n\nЧем вы занимаетесь?", reply_markup=get_cancel_keyboard())
+    msg = await message.answer("✅ Имя принято.\n\nЧем вы занимаетесь?", reply_markup=get_cancel_keyboard())
+    await state.update_data(last_message_id=msg.message_id)
     await state.set_state(ProfileForm.occupation)
 
 @router.message(ProfileForm.occupation, F.text)
-async def process_occupation(message: types.Message, state: FSMContext):
+async def process_occupation(message: types.Message, state: FSMContext, bot: Bot):
+    data = await state.get_data()
+    last_msg_id = data.get('last_message_id')
+    if last_msg_id:
+        await delete_message_safe(bot, message.from_user.id, last_msg_id)
+    
     if len(message.text.strip()) < 3:
-        await message.answer("❌ Описание слишком короткое.", reply_markup=get_cancel_keyboard())
+        msg = await message.answer("❌ Описание слишком короткое.", reply_markup=get_cancel_keyboard())
+        await state.update_data(last_message_id=msg.message_id)
         return
     
     await state.update_data(occupation=message.text.strip())
-    await message.answer("✅ Принято.\n\nКого или что вы ищете?", reply_markup=get_cancel_keyboard())
+    msg = await message.answer("✅ Принято.\n\nКого или что вы ищете?", reply_markup=get_cancel_keyboard())
+    await state.update_data(last_message_id=msg.message_id)
     await state.set_state(ProfileForm.looking)
 
 @router.message(ProfileForm.looking, F.text)
-async def process_looking(message: types.Message, state: FSMContext):
+async def process_looking(message: types.Message, state: FSMContext, bot: Bot):
+    data = await state.get_data()
+    last_msg_id = data.get('last_message_id')
+    if last_msg_id:
+        await delete_message_safe(bot, message.from_user.id, last_msg_id)
+    
     if len(message.text.strip()) < 3:
-        await message.answer("❌ Описание слишком короткое.", reply_markup=get_cancel_keyboard())
+        msg = await message.answer("❌ Описание слишком короткое.", reply_markup=get_cancel_keyboard())
+        await state.update_data(last_message_id=msg.message_id)
         return
     
     await state.update_data(looking=message.text.strip())
-    await message.answer(
+    msg = await message.answer(
         "✅ Принято.\n\nОтправьте ваше **фото** (или напишите 'нет'):",
         parse_mode="Markdown",
         reply_markup=get_cancel_keyboard()
     )
+    await state.update_data(last_message_id=msg.message_id)
     await state.set_state(ProfileForm.photo)
 
 @router.message(ProfileForm.photo, F.photo)
 async def process_photo(message: types.Message, state: FSMContext, bot: Bot):
-    photo_id = message.photo[-1].file_id
     data = await state.get_data()
+    last_msg_id = data.get('last_message_id')
+    if last_msg_id:
+        await delete_message_safe(bot, message.from_user.id, last_msg_id)
     
+    photo_id = message.photo[-1].file_id
     try:
-        await message.answer("⏳ Загрузка фото...", reply_markup=get_main_menu_inline())
         photo_url = await upload_photo_to_s3(photo_id, bot)
     except Exception as e:
         logger.error(f"Ошибка загрузки в S3: {e}")
@@ -346,6 +402,9 @@ async def process_photo(message: types.Message, state: FSMContext, bot: Bot):
 @router.message(ProfileForm.photo, F.text)
 async def process_no_photo(message: types.Message, state: FSMContext, bot: Bot):
     data = await state.get_data()
+    last_msg_id = data.get('last_message_id')
+    if last_msg_id:
+        await delete_message_safe(bot, message.from_user.id, last_msg_id)
     
     profile_id = await add_profile(
         tg_id=message.from_user.id,
@@ -364,7 +423,7 @@ async def process_no_photo(message: types.Message, state: FSMContext, bot: Bot):
     await notify_admin(bot, message.from_user.id, data, None, profile_id)
     logger.info(f"Profile {profile_id} submitted by user {message.from_user.id} (no photo)")
 
-async def notify_admin(bot: Bot, user_id: int, data: dict, photo_url: str, profile_id: int) -> bool:
+async def notify_admin(bot: Bot, user_id: int,  dict, photo_url: str, profile_id: int) -> bool:
     """Отправить анкету на модерацию в чат. Возвращает True если успешно."""
     text = (
         f"🔔 **Новая анкета на модерацию!**\n\n"
@@ -376,7 +435,6 @@ async def notify_admin(bot: Bot, user_id: int, data: dict, photo_url: str, profi
         f"⏳ **Статус:** На модерации"
     )
     
-    # Пробуем отправить в чат модерации
     try:
         if photo_url:
             await bot.send_photo(
@@ -398,7 +456,6 @@ async def notify_admin(bot: Bot, user_id: int, data: dict, photo_url: str, profi
     except Exception as e:
         logger.error(f"Ошибка отправки в чат модерации: {e}")
     
-    # Фоллбэк: отправляем в ЛС админу
     try:
         if photo_url:
             await bot.send_photo(
@@ -421,7 +478,7 @@ async def notify_admin(bot: Bot, user_id: int, data: dict, photo_url: str, profi
         logger.error(f"Фоллбэк уведомление тоже не отправлено: {e2}")
         return False
 
-async def notify_admin_edit(bot: Bot, user_id: int, data: dict, photo_url: str, profile_id: int) -> bool:
+async def notify_admin_edit(bot: Bot, user_id: int,  dict, photo_url: str, profile_id: int) -> bool:
     """Отправить изменения анкеты на модерацию. Возвращает True если успешно."""
     text = (
         f"✏️ **Изменения анкеты на модерацию!**\n\n"
@@ -433,7 +490,6 @@ async def notify_admin_edit(bot: Bot, user_id: int, data: dict, photo_url: str, 
         f"⏳ **Статус:** На модерации"
     )
     
-    # Пробуем отправить в чат модерации
     try:
         if photo_url:
             await bot.send_photo(
@@ -455,7 +511,6 @@ async def notify_admin_edit(bot: Bot, user_id: int, data: dict, photo_url: str, 
     except Exception as e:
         logger.error(f"Ошибка отправки в чат модерации (edit): {e}")
     
-    # Фоллбэк: отправляем в ЛС админу
     try:
         if photo_url:
             await bot.send_photo(
