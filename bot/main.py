@@ -9,13 +9,9 @@ from bot.database import init_db
 from bot.handlers import start, profile, admin
 from bot.keyboards import get_main_menu_inline
 
-# Создание папки для логов
 os.makedirs("logs", exist_ok=True)
-
-# Отключаем буферизацию
 os.environ["PYTHONUNBUFFERED"] = "1"
 
-# Настройка логирования: и в файл, и в консоль
 formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
 
 file_handler = logging.FileHandler("logs/bot.log", encoding="utf-8", mode="a")
@@ -45,32 +41,25 @@ async def main():
     bot = Bot(token=BOT_TOKEN)
     dp = Dispatcher()
     
-    # Инициализация БД
     await init_db()
     root_logger.info("База данных инициализирована")
     
-    # Регистрация роутеров
     dp.include_router(start.router)
     dp.include_router(profile.router)
     dp.include_router(admin.router)
     
-    # Middleware для логирования (ПРАВИЛЬНЫЙ СИНТАКСИС ДЛЯ AIОGRAM 3!)
     @dp.update.middleware()
     async def log_updates(handler, event, data):
         if hasattr(event, 'update_id') and hasattr(event, 'from_user'):
             root_logger.info(f"Update: {event.update_id} from user {event.from_user.id if event.from_user else 'unknown'}")
         return await handler(event, data)
     
-    # Обработчик команды /start с главной клавиатурой
     @dp.message(CommandStart())
-    async def cmd_start(message: types.Message):
-        await message.answer(
-            "👋 Привет! Это бот мероприятия 'Гости Небесного'.\n\nВыберите действие:",
-            reply_markup=get_main_menu_inline()
-        )
+    async def cmd_start(message: types.Message, bot: Bot):
+        from bot.handlers.start import send_main_menu
+        await send_main_menu(message, bot)
         root_logger.info(f"User {message.from_user.id} pressed /start")
     
-    # Запуск
     root_logger.info("Бот запущен и готов к работе...")
     print(">>> POLLING STARTED <<<", flush=True)
     
