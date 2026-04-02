@@ -28,6 +28,8 @@ async def init_db():
 async def add_profile(tg_id, name, occupation, looking, photo_url):
     conn = await get_connection()
     async with conn.cursor() as cursor:
+        # Сначала удаляем старую анкету пользователя если есть
+        await cursor.execute("DELETE FROM profiles WHERE tg_id = %s", (tg_id,))
         await cursor.execute(
             "INSERT INTO profiles (tg_id, name, occupation, looking, photo_url, status) VALUES (%s, %s, %s, %s, %s, 'pending')",
             (tg_id, name, occupation, looking, photo_url)
@@ -36,6 +38,31 @@ async def add_profile(tg_id, name, occupation, looking, photo_url):
         profile_id = cursor.lastrowid
     conn.close()
     return profile_id
+
+async def update_profile(profile_id, name, occupation, looking, photo_url):
+    """Обновить существующую анкету"""
+    conn = await get_connection()
+    async with conn.cursor() as cursor:
+        await cursor.execute(
+            "UPDATE profiles SET name = %s, occupation = %s, looking = %s, photo_url = %s, status = 'pending' WHERE id = %s",
+            (name, occupation, looking, photo_url, profile_id)
+        )
+        await conn.commit()
+    conn.close()
+
+async def delete_profile_by_tg_id(tg_id):
+    """Удалить анкету пользователя по Telegram ID"""
+    conn = await get_connection()
+    async with conn.cursor() as cursor:
+        await cursor.execute("SELECT photo_url FROM profiles WHERE tg_id = %s AND status = 'approved'", (tg_id,))
+        result = await cursor.fetchone()
+        photo_url = result[0] if result else None
+        
+        await cursor.execute("DELETE FROM profiles WHERE tg_id = %s", (tg_id,))
+        deleted_count = cursor.rowcount
+        await conn.commit()
+    conn.close()
+    return deleted_count, photo_url
 
 async def get_pending_profiles():
     conn = await get_connection()
@@ -91,9 +118,22 @@ async def get_profile_by_id(profile_id):
     return result
 
 async def get_profile_by_tg_id(tg_id):
+    """Получить профиль пользователя по Telegram ID"""
     conn = await get_connection()
     async with conn.cursor(aiomysql.DictCursor) as cursor:
         await cursor.execute("SELECT * FROM profiles WHERE tg_id = %s ORDER BY id DESC LIMIT 1", (tg_id,))
         result = await cursor.fetchone()
     conn.close()
     return result
+
+async def user_has_approved_profile(tg_id):
+    """Проверить, есть ли у пользователя одобренная анкета"""
+    conn = await get_connection()
+    async with conn.cursor() as cursor:
+        await cursor.execute(
+            "SELECT COUNT(*) FROM profiles WHERE tg_id = %s AND status = 'approved'",
+            (tg_id,)
+        )
+        result = await cursor.fetchone()
+    conn.close()
+    return result[0] > 0 if result else False
