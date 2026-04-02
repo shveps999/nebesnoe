@@ -111,10 +111,9 @@ async def send_participants_list(message: types.Message, bot: Bot, user_tg_id: i
             if first_msg_id is None:
                 first_msg_id = sent_msg.message_id
     
-    # ✅ Кнопки ТОЛЬКО в конце (БЕЗ текста "Конец списка")
-    # Используем пробел как text — он не виден, но удовлетворяет требованию API
+    # ✅ Кнопки ТОЛЬКО в конце (с минимальным текстом ".")
     final_msg = await message.answer(
-        " ",  # ← простой пробел (визуально не заметен)
+        ".",  # ← точка (минимальный видимый текст)
         reply_markup=get_refresh_keyboard()
     )
     
@@ -134,7 +133,7 @@ async def send_participants_list(message: types.Message, bot: Bot, user_tg_id: i
 @router.callback_query(F.data == "view_participants")
 async def view_participants_callback(callback: types.CallbackQuery, bot: Bot):
     """Показать список участников (удаляет меню)"""
-    user_tg_id = callback.from_user.id  # ← ПРАВИЛЬНО: берём из callback
+    user_tg_id = callback.from_user.id
     
     # 1. Удаляем предыдущее меню
     last_menu_id = await get_user_last_message(user_tg_id)
@@ -151,7 +150,7 @@ async def view_participants_callback(callback: types.CallbackQuery, bot: Bot):
 @router.callback_query(F.data == "refresh_list")
 async def refresh_list_callback(callback: types.CallbackQuery, bot: Bot):
     """Обновить список (удаляет старый список перед показом нового)"""
-    user_tg_id = callback.from_user.id  # ← ПРАВИЛЬНО: берём из callback
+    user_tg_id = callback.from_user.id
     
     # 1. Удаляем СТАРЫЙ список участников (если есть)
     await _delete_participant_list(bot, user_tg_id)
@@ -166,7 +165,7 @@ async def refresh_list_callback(callback: types.CallbackQuery, bot: Bot):
 @router.callback_query(F.data == "back_to_menu")
 async def back_to_menu_callback(callback: types.CallbackQuery, bot: Bot):
     """Вернуться в меню (удаляет список анкет и показывает чистое меню)"""
-    user_tg_id = callback.from_user.id  # ← ПРАВИЛЬНО: берём из callback
+    user_tg_id = callback.from_user.id
     
     # 1. Удаляем список участников (если он был показан)
     await _delete_participant_list(bot, user_tg_id)
