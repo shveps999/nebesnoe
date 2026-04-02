@@ -72,24 +72,32 @@ async def send_participants_list(message: types.Message, bot: Bot, user_tg_id: i
         )
         return
     
+    first_msg_id = None
+    
     # Отправляем анкеты БЕЗ кнопок
     for profile in profiles:
         caption = f"👤 **{profile['name']}**\n💼 {profile['occupation']}\n🔍 Ищет: {profile['looking']}"
         try:
             if profile['photo_url']:
-                await message.answer_photo(
+                sent_msg = await message.answer_photo(
                     photo=URLInputFile(profile['photo_url']),
                     caption=caption,
                     parse_mode="Markdown"
                 )
             else:
-                await message.answer(
+                sent_msg = await message.answer(
                     caption,
                     parse_mode="Markdown"
                 )
+            
+            if first_msg_id is None:
+                first_msg_id = sent_msg.message_id
+                
         except Exception as e:
             logger.error(f"Ошибка отправки фото: {e}")
-            await message.answer(caption, parse_mode="Markdown")
+            sent_msg = await message.answer(caption, parse_mode="Markdown")
+            if first_msg_id is None:
+                first_msg_id = sent_msg.message_id
     
     # Кнопки ТОЛЬКО в конце
     final_msg = await message.answer(
@@ -97,6 +105,10 @@ async def send_participants_list(message: types.Message, bot: Bot, user_tg_id: i
         parse_mode="Markdown",
         reply_markup=get_refresh_keyboard()
     )
+    
+    # Сохраняем ID последнего сообщения списка (для удаления при возврате в меню)
+    # Используем отрицательное значение как маркер "это список, а не меню"
+    await save_user_message(user_tg_id, -final_msg.message_id)
     
     # Если админ - показываем админ-панель
     if message.from_user.id == ADMIN_ID:
@@ -115,7 +127,7 @@ async def view_participants_callback(callback: types.CallbackQuery, bot: Bot):
     
     # 1. Удаляем предыдущее меню
     last_menu_id = await get_user_last_message(user_tg_id)
-    if last_menu_id:
+    if last_menu_id and last_menu_id > 0:  # Положительное = меню
         await delete_message_safe(bot, user_tg_id, last_menu_id)
     
     # 2. Безопасно удаляем сообщение с кнопкой
@@ -142,9 +154,25 @@ async def back_to_menu_callback(callback: types.CallbackQuery, bot: Bot):
     """Вернуться в меню (удаляет список анкет и показывает чистое меню)"""
     user_tg_id = callback.from_user.id
     
-    # 1. Безопасно удаляем сообщение с кнопкой "В главное меню"
+    # 1. Получаем сохранённый ID (может быть отрицательным = список)
+    saved_id = await get_user_last_message(user_tg_id)
+    
+    if saved_id and saved_id < 0:  # Отрицательное = это был список анкет
+        last_list_msg_id = abs(saved_id)
+        
+        # Удаляем финальное сообщение списка (с кнопками)
+        await delete_message_safe(bot, user_tg_id, last_list_msg_id)
+        
+        # Удаляем предыдущие ~20 сообщений (анкеты) - сообщение в чате имеют последовательные ID
+        for offset in range(1, 25):
+            await delete_message_safe(bot, user_tg_id, last_list_msg_id - offset)
+    
+    elif saved_id and saved_id > 0:  # Положительное = это было меню
+        await delete_message_safe(bot, user_tg_id, saved_id)
+    
+    # 2. Безопасно удаляем сообщение с кнопкой "В главное меню"
     await delete_message_safe(bot, user_tg_id, callback.message.message_id)
     
-    # 2. Показываем чистое меню (оно удалит предыдущее меню из БД)
-    await send_main_menu(callback.message, bot, delete_old=True)
+    # 3. Показываем чистое меню
+    await send_main_menu(callback.message, bot, delete_old=False)
     await callback.answer()
