@@ -208,7 +208,8 @@ async def edit_process_looking(message: types.Message, state: FSMContext, bot: B
     
     msg = await message.answer(
         "✅ Принято.\n\n"
-        "Отправьте **новое фото** (или напишите 'оставить' чтобы не менять):",
+        "📸 **Теперь отправьте ваше фото**\n\n"
+        "⚠️ **Фото обязательно** — отправьте изображение файлом или картинкой.",
         parse_mode="Markdown",
         reply_markup=get_cancel_keyboard()
     )
@@ -233,32 +234,48 @@ async def edit_process_photo(message: types.Message, state: FSMContext, bot: Bot
         photo_url = await upload_photo_to_s3(photo_id, bot)
     except Exception as e:
         logger.error(f"Ошибка загрузки в S3: {e}")
-        await message.answer("❌ Ошибка загрузки фото.", reply_markup=get_main_menu_inline())
-        await state.clear()
+        msg = await message.answer("❌ Ошибка загрузки фото. Попробуйте еще раз.", reply_markup=get_cancel_keyboard())
+        await state.update_data(last_message_id=msg.message_id)
         return
     
     await update_profile(profile_id, data['name'], data['occupation'], data['looking'], photo_url)
     await finish_edit(message, bot, profile_id, data, photo_url, state)
 
-@router.message(EditForm.photo, F.text)
-async def edit_process_no_photo(message: types.Message, state: FSMContext, bot: Bot):
+@router.message(EditForm.photo, ~F.photo)
+async def edit_process_photo_not_photo(message: types.Message, state: FSMContext, bot: Bot):
+    """Если прислали не фото — показываем ошибку"""
     data = await state.get_data()
     last_msg_id = data.get('last_message_id')
     if last_msg_id:
         await delete_message_safe(bot, message.from_user.id, last_msg_id)
     
-    profile_id = data.get('profile_id')
-    profile = await get_profile_by_tg_id(message.from_user.id)
+    msg = await message.answer(
+        "❌ **Нужно отправить фото!**\n\n"
+        "📸 Пожалуйста, прикрепите изображение.\n"
+        "Текстовые сообщения не принимаются.",
+        parse_mode="Markdown",
+        reply_markup=get_cancel_keyboard()
+    )
+    await state.update_data(last_message_id=msg.message_id)
+    # Остаёмся в том же состоянии
+    await state.set_state(EditForm.photo)
+
+@router.message(EditForm.photo, F.text)
+async def edit_process_no_photo(message: types.Message, state: FSMContext, bot: Bot):
+    """Обработка текста на шаге фото — показываем ошибку"""
+    data = await state.get_data()
+    last_msg_id = data.get('last_message_id')
+    if last_msg_id:
+        await delete_message_safe(bot, message.from_user.id, last_msg_id)
     
-    if message.text.lower() == 'оставить' and profile:
-        photo_url = profile['photo_url']
-    else:
-        photo_url = None
-        if profile and profile['photo_url']:
-            await delete_photo_from_s3(profile['photo_url'])
-    
-    await update_profile(profile_id, data['name'], data['occupation'], data['looking'], photo_url)
-    await finish_edit(message, bot, profile_id, data, photo_url, state)
+    msg = await message.answer(
+        "❌ **Нужно отправить фото!**\n\n"
+        "📸 Пожалуйста, прикрепите изображение.\n"
+        "Текстовые сообщения не принимаются.",
+        parse_mode="Markdown",
+        reply_markup=get_cancel_keyboard()
+    )
+    await state.update_data(last_message_id=msg.message_id)
 
 async def finish_edit(message: types.Message, bot: Bot, profile_id: int, data: dict, photo_url: str, state: FSMContext):
     """Завершение редактирования и отправка на модерацию"""
@@ -359,7 +376,10 @@ async def process_looking(message: types.Message, state: FSMContext, bot: Bot):
     
     await state.update_data(looking=message.text.strip())
     msg = await message.answer(
-        "✅ Принято.\n\nОтправьте ваше **фото** (или напишите 'нет'):",
+        "✅ Принято.\n\n"
+        "📸 **Теперь отправьте ваше фото**\n\n"
+        "⚠️ **Фото обязательно** — отправьте изображение файлом или картинкой.\n"
+        "❌ Пропустить этот шаг нельзя.",
         parse_mode="Markdown",
         reply_markup=get_cancel_keyboard()
     )
@@ -378,8 +398,8 @@ async def process_photo(message: types.Message, state: FSMContext, bot: Bot):
         photo_url = await upload_photo_to_s3(photo_id, bot)
     except Exception as e:
         logger.error(f"Ошибка загрузки в S3: {e}")
-        await message.answer("❌ Ошибка загрузки фото.", reply_markup=get_main_menu_inline())
-        await state.clear()
+        msg = await message.answer("❌ Ошибка загрузки фото. Попробуйте еще раз.", reply_markup=get_cancel_keyboard())
+        await state.update_data(last_message_id=msg.message_id)
         return
     
     profile_id = await add_profile(
@@ -399,29 +419,42 @@ async def process_photo(message: types.Message, state: FSMContext, bot: Bot):
     await notify_admin(bot, message.from_user.id, data, photo_url, profile_id)
     logger.info(f"Profile {profile_id} submitted by user {message.from_user.id}")
 
-@router.message(ProfileForm.photo, F.text)
-async def process_no_photo(message: types.Message, state: FSMContext, bot: Bot):
-    data = await state.get_data()  # ← ИСПРАВЛЕНО: получаем data из state
+@router.message(ProfileForm.photo, ~F.photo)
+async def process_photo_not_photo(message: types.Message, state: FSMContext, bot: Bot):
+    """Если прислали не фото — показываем ошибку и просим фото"""
+    data = await state.get_data()
     last_msg_id = data.get('last_message_id')
     if last_msg_id:
         await delete_message_safe(bot, message.from_user.id, last_msg_id)
     
-    profile_id = await add_profile(
-        tg_id=message.from_user.id,
-        name=data['name'],
-        occupation=data['occupation'],
-        looking=data['looking'],
-        photo_url=None
-    )
-    
-    await message.answer(
-        "✅ **Анкета отправлена на модерацию!**",
+    msg = await message.answer(
+        "❌ **Нужно отправить фото!**\n\n"
+        "📸 Пожалуйста, прикрепите изображение.\n"
+        "Текстовые сообщения не принимаются.\n\n"
+        "💡 Чтобы пропустить заполнение, нажмите **❌ Отмена**",
         parse_mode="Markdown",
-        reply_markup=get_main_menu_inline()
+        reply_markup=get_cancel_keyboard()
     )
-    await state.clear()
-    await notify_admin(bot, message.from_user.id, data, None, profile_id)
-    logger.info(f"Profile {profile_id} submitted by user {message.from_user.id} (no photo)")
+    await state.update_data(last_message_id=msg.message_id)
+    # Остаёмся в том же состоянии — ждём фото
+
+@router.message(ProfileForm.photo, F.text)
+async def process_no_photo(message: types.Message, state: FSMContext, bot: Bot):
+    """Обработка текста на шаге фото — показываем ошибку"""
+    data = await state.get_data()
+    last_msg_id = data.get('last_message_id')
+    if last_msg_id:
+        await delete_message_safe(bot, message.from_user.id, last_msg_id)
+    
+    msg = await message.answer(
+        "❌ **Нужно отправить фото!**\n\n"
+        "📸 Пожалуйста, прикрепите изображение.\n"
+        "Текстовые сообщения не принимаются.\n\n"
+        "💡 Чтобы пропустить заполнение, нажмите **❌ Отмена**",
+        parse_mode="Markdown",
+        reply_markup=get_cancel_keyboard()
+    )
+    await state.update_data(last_message_id=msg.message_id)
 
 async def notify_admin(bot: Bot, user_id: int, data: dict, photo_url: str, profile_id: int) -> bool:
     """Отправить анкету на модерацию в чат. Возвращает True если успешно."""
