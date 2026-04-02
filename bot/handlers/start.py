@@ -11,22 +11,26 @@ router = Router()
 @router.callback_query(F.data == "view_participants")
 async def view_participants_callback(callback: types.CallbackQuery):
     """Обработка кнопки 'Посмотреть участников'"""
+    # ✅ ПРАВИЛЬНО: берем ID пользователя из callback.from_user, а не из callback.message
     await callback.message.delete()
-    await view_participants(callback.message)
+    await view_participants(callback.message, callback.from_user.id)
     await callback.answer()
 
 @router.callback_query(F.data == "refresh_list")
 async def refresh_list_callback(callback: types.CallbackQuery):
     """Обработка кнопки 'Обновить список'"""
     await callback.message.delete()
-    await view_participants(callback.message)
+    await view_participants(callback.message, callback.from_user.id)
     await callback.answer("Список обновлён! 🔄")
 
-async def view_participants(message: types.Message):
+async def view_participants(message: types.Message, user_tg_id: int = None):
     """Показать список одобренных участников"""
-    user_tg_id = message.from_user.id
+    # ✅ Если user_tg_id не передан — берем из message (для обычных сообщений)
+    if user_tg_id is None:
+        user_tg_id = message.from_user.id
     
     # Проверяем, есть ли у пользователя одобренная анкета
+    # Админу всегда показываем список
     if user_tg_id != ADMIN_ID:
         has_profile = await user_has_approved_profile(user_tg_id)
         
@@ -60,13 +64,11 @@ async def view_participants(message: types.Message):
                     photo=URLInputFile(profile['photo_url']),
                     caption=caption,
                     parse_mode="Markdown"
-                    # НЕТ reply_markup здесь!
                 )
             else:
                 await message.answer(
                     caption,
                     parse_mode="Markdown"
-                    # НЕТ reply_markup здесь!
                 )
         except Exception as e:
             logger.error(f"Ошибка отправки фото: {e}")
@@ -86,7 +88,7 @@ async def view_participants(message: types.Message):
             reply_markup=get_admin_keyboard()
         )
     
-    logger.info(f"Sent {len(profiles)} profiles to user {message.from_user.id}")
+    logger.info(f"Sent {len(profiles)} profiles to user {user_tg_id}")
 
 @router.callback_query(F.data == "back_to_menu")
 async def back_to_menu_callback(callback: types.CallbackQuery):
