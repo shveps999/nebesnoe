@@ -88,7 +88,18 @@ async def send_participants_list(message: types.Message, bot: Bot, user_tg_id: i
     
     # Отправляем анкеты БЕЗ кнопок
     for profile in profiles:
-        caption = f"📌 **{profile['name']}**\n {profile['occupation']}\n Ищет: {profile['looking']}"
+        # Формируем строку с Telegram (кликабельная)
+        tg_line = ""
+        if profile.get('tg_username'):
+            tg_line = f"\n\n🔗 Тг: {profile['tg_username']}"
+        
+        caption = (
+            f"**{profile['name']}**\n\n"
+            f"🪄 {profile['occupation']}\n\n"
+            f"💡 Ищу: {profile['looking']}"
+            f"{tg_line}"
+        )
+        
         try:
             if profile['photo_url']:
                 sent_msg = await message.answer_photo(
