@@ -3,7 +3,7 @@ from aiogram import Router, F, types, Bot
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from bot.keyboards import get_cancel_keyboard, get_main_menu_inline, get_manage_profile_keyboard, get_confirm_delete_keyboard
-from bot.database import add_profile, update_profile, user_has_approved_profile, get_profile_by_tg_id, delete_profile_by_tg_id
+from bot.database import add_profile, update_profile, user_has_approved_profile, get_profile_by_tg_id, delete_profile_by_tg_id, update_profile_status
 from bot.config import ADMIN_ID, MODERATION_CHAT_ID
 from bot.s3_storage import upload_photo_to_s3, delete_photo_from_s3
 from bot.keyboards import get_moderation_keyboard
@@ -213,7 +213,7 @@ async def edit_process_photo(message: types.Message, state: FSMContext, bot: Bot
         return
     
     await update_profile(profile_id, data['name'], data['occupation'], data['looking'], photo_url)
-    await finish_edit(message, bot, profile_id, data, photo_url)
+    await finish_edit(message, bot, profile_id, data, photo_url, state)
 
 @router.message(EditForm.photo, F.text)
 async def edit_process_no_photo(message: types.Message, state: FSMContext, bot: Bot):
@@ -229,9 +229,9 @@ async def edit_process_no_photo(message: types.Message, state: FSMContext, bot: 
             await delete_photo_from_s3(profile['photo_url'])
     
     await update_profile(profile_id, data['name'], data['occupation'], data['looking'], photo_url)
-    await finish_edit(message, bot, profile_id, data, photo_url)
+    await finish_edit(message, bot, profile_id, data, photo_url, state)
 
-async def finish_edit(message: types.Message, bot: Bot, profile_id: int,  dict, photo_url: str):
+async def finish_edit(message: types.Message, bot: Bot, profile_id: int, data: dict, photo_url: str, state: FSMContext):
     """Завершение редактирования и отправка на модерацию"""
     
     # Сначала отправляем уведомление админу
@@ -247,8 +247,6 @@ async def finish_edit(message: types.Message, bot: Bot, profile_id: int,  dict, 
         logger.info(f"Profile {profile_id} edit submitted by user {message.from_user.id}")
     else:
         # ❌ Если не удалось отправить — ОТКАТЫВАЕМ изменения!
-        # Возвращаем статус 'approved', чтобы анкета не пропала
-        from bot.database import update_profile_status
         await update_profile_status(profile_id, 'approved')
         
         await message.answer(
@@ -260,7 +258,6 @@ async def finish_edit(message: types.Message, bot: Bot, profile_id: int,  dict, 
         )
         logger.warning(f"Edit notification failed for profile {profile_id}, changes rolled back")
     
-    await message.bot.close() if hasattr(message.bot, 'close') else None
     await state.clear()
 
 @router.callback_query(F.data == "cancel_process")
@@ -369,7 +366,7 @@ async def process_no_photo(message: types.Message, state: FSMContext, bot: Bot):
     await notify_admin(bot, message.from_user.id, data, None, profile_id)
     logger.info(f"Profile {profile_id} submitted by user {message.from_user.id} (no photo)")
 
-async def notify_admin(bot: Bot, user_id: int,  dict, photo_url: str, profile_id: int) -> bool:
+async def notify_admin(bot: Bot, user_id: int, data: dict, photo_url: str, profile_id: int) -> bool:
     """Отправить анкету на модерацию в чат. Возвращает True если успешно."""
     text = (
         f"🔔 **Новая анкета на модерацию!**\n\n"
@@ -426,7 +423,7 @@ async def notify_admin(bot: Bot, user_id: int,  dict, photo_url: str, profile_id
         logger.error(f"Фоллбэк уведомление тоже не отправлено: {e2}")
         return False
 
-async def notify_admin_edit(bot: Bot, user_id: int,  dict, photo_url: str, profile_id: int) -> bool:
+async def notify_admin_edit(bot: Bot, user_id: int, data: dict, photo_url: str, profile_id: int) -> bool:
     """Отправить изменения анкеты на модерацию. Возвращает True если успешно."""
     text = (
         f"✏️ **Изменения анкеты на модерацию!**\n\n"
