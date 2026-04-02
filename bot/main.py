@@ -15,7 +15,7 @@ os.makedirs("logs", exist_ok=True)
 # Отключаем буферизацию
 os.environ["PYTHONUNBUFFERED"] = "1"
 
-# Настройка логирования
+# Настройка логирования: и в файл, и в консоль
 formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
 
 file_handler = logging.FileHandler("logs/bot.log", encoding="utf-8", mode="a")
@@ -54,17 +54,12 @@ async def main():
     dp.include_router(profile.router)
     dp.include_router(admin.router)
     
-    # === ЛОГИРОВАНИЕ ОБНОВЛЕНИЙ (ПРАВИЛЬНЫЙ СИНТАКСИС AIОGRAM 3) ===
-    @dp.update.middleware()
+    # Middleware для логирования
+    @dp.middleware()
     async def log_updates(handler, event, data):
-        try:
-            if hasattr(event, 'update_id'):
-                user_id = getattr(getattr(event, 'from_user', None), 'id', 'unknown')
-                root_logger.info(f"Update: {event.update_id} from user {user_id}")
-        except Exception:
-            pass  # Не прерываем работу бота из-за ошибки логирования
+        if hasattr(event, 'update_id') and hasattr(event, 'from_user'):
+            root_logger.info(f"Update: {event.update_id} from user {event.from_user.id if event.from_user else 'unknown'}")
         return await handler(event, data)
-    # ================================================================
     
     # Обработчик команды /start с главной клавиатурой
     @dp.message(CommandStart())
