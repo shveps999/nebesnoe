@@ -1,5 +1,5 @@
 import logging
-from aiogram import Router, F, types
+from aiogram import Router, F, types, Bot  # ← Bot добавлен!
 from aiogram.types import URLInputFile
 from bot.keyboards import get_main_menu_inline, get_refresh_keyboard, get_admin_keyboard
 from bot.database import get_approved_profiles, user_has_approved_profile, get_user_last_message, save_user_message
