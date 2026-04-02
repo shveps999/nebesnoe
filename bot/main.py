@@ -54,8 +54,8 @@ async def main():
     dp.include_router(profile.router)
     dp.include_router(admin.router)
     
-    # Middleware для логирования
-    @dp.middleware()
+    # Middleware для логирования (ПРАВИЛЬНЫЙ СИНТАКСИС ДЛЯ AIОGRAM 3!)
+    @dp.update.middleware()
     async def log_updates(handler, event, data):
         if hasattr(event, 'update_id') and hasattr(event, 'from_user'):
             root_logger.info(f"Update: {event.update_id} from user {event.from_user.id if event.from_user else 'unknown'}")
