@@ -8,6 +8,7 @@ from bot.config import BOT_TOKEN, ADMIN_ID
 from bot.database import init_db
 from bot.handlers import start, profile, admin
 from bot.keyboards import get_main_menu_inline
+from bot.handlers.start import send_main_menu
 
 os.makedirs("logs", exist_ok=True)
 os.environ["PYTHONUNBUFFERED"] = "1"
@@ -56,8 +57,8 @@ async def main():
     
     @dp.message(CommandStart())
     async def cmd_start(message: types.Message, bot: Bot):
-        from bot.handlers.start import send_main_menu
-        await send_main_menu(message, bot)
+        # ← ИСПРАВЛЕНО: передаём user_tg_id явно
+        await send_main_menu(message, bot, message.from_user.id)
         root_logger.info(f"User {message.from_user.id} pressed /start")
     
     root_logger.info("Бот запущен и готов к работе...")
