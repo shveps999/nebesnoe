@@ -15,6 +15,7 @@ async def init_db():
                 name VARCHAR(255) NOT NULL,
                 occupation TEXT,
                 looking TEXT,
+                tg_username VARCHAR(100),
                 photo_url TEXT,
                 status VARCHAR(50) DEFAULT 'pending',
                 admin_comment TEXT,
@@ -22,55 +23,35 @@ async def init_db():
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             )
         """)
-        await cursor.execute("""
-            CREATE TABLE IF NOT EXISTS user_messages (
-                tg_id BIGINT PRIMARY KEY,
-                last_menu_message_id INT,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-            )
-        """)
+        
+        # Добавляем колонку tg_username если её нет
+        try:
+            await cursor.execute("ALTER TABLE profiles ADD COLUMN tg_username VARCHAR(100) AFTER looking")
+        except:
+            pass  # Колонка уже существует
+        
         await conn.commit()
     conn.close()
 
-async def save_user_message(tg_id: int, message_id: int):
-    """Сохранить ID последнего сообщения меню пользователя"""
-    conn = await get_connection()
-    async with conn.cursor() as cursor:
-        await cursor.execute(
-            "INSERT INTO user_messages (tg_id, last_menu_message_id) VALUES (%s, %s) ON DUPLICATE KEY UPDATE last_menu_message_id = %s",
-            (tg_id, message_id, message_id)
-        )
-        await conn.commit()
-    conn.close()
-
-async def get_user_last_message(tg_id: int) -> int:
-    """Получить ID последнего сообщения меню пользователя"""
-    conn = await get_connection()
-    async with conn.cursor() as cursor:
-        await cursor.execute("SELECT last_menu_message_id FROM user_messages WHERE tg_id = %s", (tg_id,))
-        result = await cursor.fetchone()
-    conn.close()
-    return result[0] if result else None
-
-async def add_profile(tg_id, name, occupation, looking, photo_url):
+async def add_profile(tg_id, name, occupation, looking, tg_username, photo_url):
     conn = await get_connection()
     async with conn.cursor() as cursor:
         await cursor.execute("DELETE FROM profiles WHERE tg_id = %s", (tg_id,))
         await cursor.execute(
-            "INSERT INTO profiles (tg_id, name, occupation, looking, photo_url, status) VALUES (%s, %s, %s, %s, %s, 'pending')",
-            (tg_id, name, occupation, looking, photo_url)
+            "INSERT INTO profiles (tg_id, name, occupation, looking, tg_username, photo_url, status) VALUES (%s, %s, %s, %s, %s, %s, 'pending')",
+            (tg_id, name, occupation, looking, tg_username, photo_url)
         )
         await conn.commit()
         profile_id = cursor.lastrowid
     conn.close()
     return profile_id
 
-async def update_profile(profile_id, name, occupation, looking, photo_url):
+async def update_profile(profile_id, name, occupation, looking, tg_username, photo_url):
     conn = await get_connection()
     async with conn.cursor() as cursor:
         await cursor.execute(
-            "UPDATE profiles SET name = %s, occupation = %s, looking = %s, photo_url = %s, status = 'pending' WHERE id = %s",
-            (name, occupation, looking, photo_url, profile_id)
+            "UPDATE profiles SET name = %s, occupation = %s, looking = %s, tg_username = %s, photo_url = %s, status = 'pending' WHERE id = %s",
+            (name, occupation, looking, tg_username, photo_url, profile_id)
         )
         await conn.commit()
     conn.close()
@@ -157,3 +138,37 @@ async def user_has_approved_profile(tg_id):
         result = await cursor.fetchone()
     conn.close()
     return result[0] > 0 if result else False
+
+async def save_user_message(tg_id: int, message_id: int):
+    """Сохранить ID последнего сообщения меню пользователя"""
+    conn = await get_connection()
+    async with conn.cursor() as cursor:
+        await cursor.execute("""
+            CREATE TABLE IF NOT EXISTS user_messages (
+                tg_id BIGINT PRIMARY KEY,
+                last_menu_message_id INT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            )
+        """)
+        await cursor.execute(
+            "INSERT INTO user_messages (tg_id, last_menu_message_id) VALUES (%s, %s) ON DUPLICATE KEY UPDATE last_menu_message_id = %s",
+            (tg_id, message_id, message_id)
+        )
+        await conn.commit()
+    conn.close()
+
+async def get_user_last_message(tg_id: int) -> int:
+    """Получить ID последнего сообщения меню пользователя"""
+    conn = await get_connection()
+    async with conn.cursor() as cursor:
+        await cursor.execute("""
+            CREATE TABLE IF NOT EXISTS user_messages (
+                tg_id BIGINT PRIMARY KEY,
+                last_menu_message_id INT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            )
+        """)
+        await cursor.execute("SELECT last_menu_message_id FROM user_messages WHERE tg_id = %s", (tg_id,))
+        result = await cursor.fetchone()
+    conn.close()
+    return result[0] if result else None
