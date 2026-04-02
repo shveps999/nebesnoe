@@ -8,6 +8,7 @@ from bot.config import ADMIN_ID, MODERATION_CHAT_ID
 from bot.s3_storage import upload_photo_to_s3, delete_photo_from_s3
 from bot.keyboards import get_moderation_keyboard
 from aiogram.types import URLInputFile
+from bot.handlers.start import send_main_menu
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -261,13 +262,10 @@ async def finish_edit(message: types.Message, bot: Bot, profile_id: int, data: d
     await state.clear()
 
 @router.callback_query(F.data == "cancel_process")
-async def cancel_process(callback: types.CallbackQuery, state: FSMContext):
+async def cancel_process(callback: types.CallbackQuery, state: FSMContext, bot: Bot):
     await state.clear()
     has_profile = await user_has_approved_profile(callback.from_user.id)
-    await callback.message.answer(
-        "❌ Отменено.",
-        reply_markup=get_main_menu_inline(has_profile)
-    )
+    await send_main_menu(callback.message, bot)
     await callback.answer()
 
 async def start_form(message: types.Message, state: FSMContext):
