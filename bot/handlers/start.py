@@ -2,7 +2,7 @@ import logging
 from aiogram import Router, F, types
 from aiogram.types import URLInputFile
 from bot.keyboards import get_main_menu_inline, get_refresh_keyboard, get_admin_keyboard
-from bot.database import get_approved_profiles
+from bot.database import get_approved_profiles, user_has_approved_profile
 from bot.config import ADMIN_ID
 
 logger = logging.getLogger(__name__)
@@ -24,6 +24,24 @@ async def refresh_list_callback(callback: types.CallbackQuery):
 
 async def view_participants(message: types.Message):
     """Показать список одобренных участников"""
+    user_tg_id = message.from_user.id
+    
+    # Проверяем, есть ли у пользователя одобренная анкета
+    if user_tg_id != ADMIN_ID:
+        has_profile = await user_has_approved_profile(user_tg_id)
+        
+        if not has_profile:
+            await message.answer(
+                "⛔ **Доступ ограничен**\n\n"
+                "Чтобы просматривать анкеты других участников, "
+                "сначала добавьте **свою анкету**.\n\n"
+                "Это необходимо для поддержания активности в сообществе.",
+                parse_mode="Markdown",
+                reply_markup=get_main_menu_inline()
+            )
+            logger.info(f"User {user_tg_id} tried to view participants without profile")
+            return
+    
     profiles = await get_approved_profiles()
     
     if not profiles:
@@ -33,12 +51,7 @@ async def view_participants(message: types.Message):
         )
         return
     
-    await message.answer(
-        f"👥 **Найдено участников: {len(profiles)}**\n\nНиже анкеты:",
-        parse_mode="Markdown",
-        reply_markup=get_main_menu_inline()
-    )
-    
+    # Отправляем все анкеты БЕЗ кнопок
     for profile in profiles:
         caption = f"👤 **{profile['name']}**\n💼 {profile['occupation']}\n🔍 Ищет: {profile['looking']}"
         try:
@@ -46,23 +59,24 @@ async def view_participants(message: types.Message):
                 await message.answer_photo(
                     photo=URLInputFile(profile['photo_url']),
                     caption=caption,
-                    parse_mode="Markdown",
-                    reply_markup=get_main_menu_inline()
+                    parse_mode="Markdown"
+                    # НЕТ reply_markup здесь!
                 )
             else:
                 await message.answer(
                     caption,
-                    parse_mode="Markdown",
-                    reply_markup=get_main_menu_inline()
+                    parse_mode="Markdown"
+                    # НЕТ reply_markup здесь!
                 )
         except Exception as e:
             logger.error(f"Ошибка отправки фото: {e}")
-            await message.answer(caption, parse_mode="Markdown", reply_markup=get_main_menu_inline())
+            await message.answer(caption, parse_mode="Markdown")
     
+    # Кнопки только в КОНЦЕ после всех анкет
     await message.answer(
         "📋 **Конец списка.**",
         parse_mode="Markdown",
-        reply_markup=get_main_menu_inline()
+        reply_markup=get_refresh_keyboard()
     )
     
     # Если админ - показать кнопку админ-панели
@@ -78,8 +92,9 @@ async def view_participants(message: types.Message):
 async def back_to_menu_callback(callback: types.CallbackQuery):
     """Вернуться в главное меню"""
     await callback.message.delete()
+    has_profile = await user_has_approved_profile(callback.from_user.id)
     await callback.message.answer(
         "🏠 **Главное меню**",
-        reply_markup=get_main_menu_inline()
+        reply_markup=get_main_menu_inline(has_profile)
     )
     await callback.answer()
