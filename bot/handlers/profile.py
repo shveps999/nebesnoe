@@ -149,7 +149,7 @@ async def delete_profile_confirm(callback: types.CallbackQuery, bot: Bot):
 async def edit_process_name(message: types.Message, state: FSMContext):
     if message.text.lower() == 'оставить':
         profile = await get_profile_by_tg_id(message.from_user.id)
-        await state.update_data(name=profile['name'])
+        await state.update_data(name=profile['name'] if profile else '')
     else:
         await state.update_data(name=message.text.strip())
     
@@ -164,7 +164,7 @@ async def edit_process_name(message: types.Message, state: FSMContext):
 async def edit_process_occupation(message: types.Message, state: FSMContext):
     if message.text.lower() == 'оставить':
         profile = await get_profile_by_tg_id(message.from_user.id)
-        await state.update_data(occupation=profile['occupation'])
+        await state.update_data(occupation=profile['occupation'] if profile else '')
     else:
         await state.update_data(occupation=message.text.strip())
     
@@ -179,7 +179,7 @@ async def edit_process_occupation(message: types.Message, state: FSMContext):
 async def edit_process_looking(message: types.Message, state: FSMContext):
     if message.text.lower() == 'оставить':
         profile = await get_profile_by_tg_id(message.from_user.id)
-        await state.update_data(looking=profile['looking'])
+        await state.update_data(looking=profile['looking'] if profile else '')
     else:
         await state.update_data(looking=message.text.strip())
     
@@ -231,17 +231,37 @@ async def edit_process_no_photo(message: types.Message, state: FSMContext, bot: 
     await update_profile(profile_id, data['name'], data['occupation'], data['looking'], photo_url)
     await finish_edit(message, bot, profile_id, data, photo_url)
 
-async def finish_edit(message: types.Message, bot: Bot, profile_id: int, data: dict, photo_url: str):
+async def finish_edit(message: types.Message, bot: Bot, profile_id: int,  dict, photo_url: str):
     """Завершение редактирования и отправка на модерацию"""
-    await message.answer(
-        "✅ **Изменения отправлены на модерацию!**\n\n"
-        "Ожидайте решения администратора.",
-        parse_mode="Markdown",
-        reply_markup=get_main_menu_inline()
-    )
-    await message.bot.close()  # Close session if needed
-    await notify_admin_edit(bot, message.from_user.id, data, photo_url, profile_id)
-    logger.info(f"Profile {profile_id} edit submitted by user {message.from_user.id}")
+    
+    # Сначала отправляем уведомление админу
+    notification_sent = await notify_admin_edit(bot, message.from_user.id, data, photo_url, profile_id)
+    
+    if notification_sent:
+        await message.answer(
+            "✅ **Изменения отправлены на модерацию!**\n\n"
+            "Ожидайте решения администратора.",
+            parse_mode="Markdown",
+            reply_markup=get_main_menu_inline()
+        )
+        logger.info(f"Profile {profile_id} edit submitted by user {message.from_user.id}")
+    else:
+        # ❌ Если не удалось отправить — ОТКАТЫВАЕМ изменения!
+        # Возвращаем статус 'approved', чтобы анкета не пропала
+        from bot.database import update_profile_status
+        await update_profile_status(profile_id, 'approved')
+        
+        await message.answer(
+            "⚠️ **Временная ошибка связи с сервером**\n\n"
+            "Изменения не отправлены. Ваша анкета осталась без изменений.\n\n"
+            "Попробуйте позже.",
+            parse_mode="Markdown",
+            reply_markup=get_main_menu_inline()
+        )
+        logger.warning(f"Edit notification failed for profile {profile_id}, changes rolled back")
+    
+    await message.bot.close() if hasattr(message.bot, 'close') else None
+    await state.clear()
 
 @router.callback_query(F.data == "cancel_process")
 async def cancel_process(callback: types.CallbackQuery, state: FSMContext):
@@ -349,8 +369,8 @@ async def process_no_photo(message: types.Message, state: FSMContext, bot: Bot):
     await notify_admin(bot, message.from_user.id, data, None, profile_id)
     logger.info(f"Profile {profile_id} submitted by user {message.from_user.id} (no photo)")
 
-async def notify_admin(bot: Bot, user_id: int, data: dict, photo_url: str, profile_id: int):
-    """Отправить анкету на модерацию в чат"""
+async def notify_admin(bot: Bot, user_id: int,  dict, photo_url: str, profile_id: int) -> bool:
+    """Отправить анкету на модерацию в чат. Возвращает True если успешно."""
     text = (
         f"🔔 **Новая анкета на модерацию!**\n\n"
         f"👤 **ID:** {profile_id}\n"
@@ -361,6 +381,7 @@ async def notify_admin(bot: Bot, user_id: int, data: dict, photo_url: str, profi
         f"⏳ **Статус:** На модерации"
     )
     
+    # Пробуем отправить в чат модерации
     try:
         if photo_url:
             await bot.send_photo(
@@ -378,11 +399,35 @@ async def notify_admin(bot: Bot, user_id: int, data: dict, photo_url: str, profi
                 reply_markup=get_moderation_keyboard(profile_id)
             )
         logger.info(f"Moderation notification sent to chat {MODERATION_CHAT_ID} for profile {profile_id}")
+        return True
     except Exception as e:
-        logger.error(f"Ошибка отправки уведомления админу: {e}")
+        logger.error(f"Ошибка отправки в чат модерации: {e}")
+    
+    # Фоллбэк: отправляем в ЛС админу
+    try:
+        if photo_url:
+            await bot.send_photo(
+                chat_id=ADMIN_ID,
+                photo=URLInputFile(photo_url),
+                caption=text,
+                parse_mode="Markdown",
+                reply_markup=get_moderation_keyboard(profile_id)
+            )
+        else:
+            await bot.send_message(
+                chat_id=ADMIN_ID,
+                text=text,
+                parse_mode="Markdown",
+                reply_markup=get_moderation_keyboard(profile_id)
+            )
+        logger.info(f"Moderation fallback sent to ADMIN_ID {ADMIN_ID} for profile {profile_id}")
+        return True
+    except Exception as e2:
+        logger.error(f"Фоллбэк уведомление тоже не отправлено: {e2}")
+        return False
 
-async def notify_admin_edit(bot: Bot, user_id: int, data: dict, photo_url: str, profile_id: int):
-    """Отправить изменения анкеты на модерацию"""
+async def notify_admin_edit(bot: Bot, user_id: int,  dict, photo_url: str, profile_id: int) -> bool:
+    """Отправить изменения анкеты на модерацию. Возвращает True если успешно."""
     text = (
         f"✏️ **Изменения анкеты на модерацию!**\n\n"
         f"👤 **ID:** {profile_id}\n"
@@ -393,6 +438,7 @@ async def notify_admin_edit(bot: Bot, user_id: int, data: dict, photo_url: str, 
         f"⏳ **Статус:** На модерации"
     )
     
+    # Пробуем отправить в чат модерации
     try:
         if photo_url:
             await bot.send_photo(
@@ -410,5 +456,29 @@ async def notify_admin_edit(bot: Bot, user_id: int, data: dict, photo_url: str, 
                 reply_markup=get_moderation_keyboard(profile_id)
             )
         logger.info(f"Edit moderation sent to chat {MODERATION_CHAT_ID} for profile {profile_id}")
+        return True
     except Exception as e:
-        logger.error(f"Ошибка отправки уведомления админу: {e}")
+        logger.error(f"Ошибка отправки в чат модерации (edit): {e}")
+    
+    # Фоллбэк: отправляем в ЛС админу
+    try:
+        if photo_url:
+            await bot.send_photo(
+                chat_id=ADMIN_ID,
+                photo=URLInputFile(photo_url),
+                caption=text,
+                parse_mode="Markdown",
+                reply_markup=get_moderation_keyboard(profile_id)
+            )
+        else:
+            await bot.send_message(
+                chat_id=ADMIN_ID,
+                text=text,
+                parse_mode="Markdown",
+                reply_markup=get_moderation_keyboard(profile_id)
+            )
+        logger.info(f"Edit moderation fallback sent to ADMIN_ID {ADMIN_ID} for profile {profile_id}")
+        return True
+    except Exception as e2:
+        logger.error(f"Фоллбэк уведомление (edit) тоже не отправлено: {e2}")
+        return False
