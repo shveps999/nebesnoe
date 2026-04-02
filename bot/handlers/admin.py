@@ -15,10 +15,6 @@ class AdminEdit(StatesGroup):
     comment = State()
     profile_id = State()
 
-# ============================================
-# КОМАНДА /clear_all - Удаление всех анкет
-# ============================================
-
 @router.message(Command("clear_all"), F.from_user.id == ADMIN_ID)
 async def cmd_clear_all(message: types.Message):
     """Команда для удаления всех опубликованных анкет"""
@@ -42,31 +38,25 @@ async def clear_all_confirm(callback: types.CallbackQuery, bot: Bot):
         return
     
     await callback.message.edit_text(
-        "⏳ **Удаление...**\n\n"
-        "Пожалуйста, подождите.",
+        "⏳ **Удаление...**\n\nПожалуйста, подождите.",
         parse_mode="Markdown"
     )
     
     try:
-        # 1. Получаем все фото для удаления
         profiles = await get_all_approved_with_photos()
         photo_urls = [p['photo_url'] for p in profiles if p['photo_url']]
         
-        # 2. Удаляем фото из S3
         s3_stats = {'success': 0, 'failed': 0}
         if photo_urls:
             s3_stats = await delete_multiple_photos_from_s3(photo_urls)
         
-        # 3. Удаляем профили из БД
         deleted_count = await delete_all_approved_profiles()
         
-        # 4. Отправляем отчет
         report = (
             "✅ **Удаление завершено!**\n\n"
             f"🗑️ Удалено анкет из БД: **{deleted_count}**\n"
             f"📸 Удалено фото из S3: **{s3_stats['success']}**\n"
-            f"❌ Ошибок при удалении фото: **{s3_stats['failed']}**\n\n"
-            "Все опубликованные анкеты удалены."
+            f"❌ Ошибок при удалении фото: **{s3_stats['failed']}**"
         )
         
         await callback.message.edit_text(
@@ -80,8 +70,7 @@ async def clear_all_confirm(callback: types.CallbackQuery, bot: Bot):
     except Exception as e:
         logger.error(f"Ошибка при очистке: {e}")
         await callback.message.edit_text(
-            f"❌ **Ошибка при удалении:**\n\n{str(e)}\n\n"
-            "Попробуйте позже.",
+            f"❌ **Ошибка при удалении:**\n\n{str(e)}",
             parse_mode="Markdown",
             reply_markup=get_main_menu_inline()
         )
@@ -96,8 +85,7 @@ async def clear_all_cancel(callback: types.CallbackQuery):
         return
     
     await callback.message.edit_text(
-        "❌ **Удаление отменено.**\n\n"
-        "Все анкеты сохранены.",
+        "❌ **Удаление отменено.**",
         parse_mode="Markdown",
         reply_markup=get_main_menu_inline()
     )
@@ -109,8 +97,6 @@ async def admin_stats(callback: types.CallbackQuery):
     if callback.from_user.id != ADMIN_ID:
         await callback.answer("❌ Доступ запрещен", show_alert=True)
         return
-    
-    from bot.database import get_approved_profiles, get_pending_profiles
     
     approved = await get_approved_profiles()
     pending = await get_pending_profiles()
@@ -129,10 +115,6 @@ async def admin_stats(callback: types.CallbackQuery):
     )
     await callback.answer()
 
-# ============================================
-# МОДЕРАЦИЯ АНКЕТ
-# ============================================
-
 @router.callback_query(F.data.startswith("admin_approve_"))
 async def admin_approve(callback: types.CallbackQuery, bot: Bot):
     """Одобрить анкету + УДАЛИТЬ сообщение модерации"""
@@ -149,16 +131,15 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot):
     
     await update_profile_status(profile_id, 'approved')
     
-    # Уведомить пользователя
     await bot.send_message(
         chat_id=profile['tg_id'],
         text=(
             "✅ **Ваша анкета одобрена!**\n\n"
-            "Теперь её видят все участники мероприятия.\n\n"
+            "Теперь вы можете просматривать анкеты других участников.\n\n"
             "Спасибо за участие! 🎉"
         ),
         parse_mode="Markdown",
-        reply_markup=get_main_menu_inline()
+        reply_markup=get_main_menu_inline(has_profile=True)
     )
     
     # УДАЛИТЬ сообщение модерации из чата
@@ -197,28 +178,20 @@ async def admin_send_comment(message: types.Message, state: FSMContext, bot: Bot
     profile_id = data.get('profile_id')
     
     if not profile_id:
-        await message.answer(
-            "❌ Ошибка: профиль не найден.",
-            reply_markup=get_main_menu_inline()
-        )
+        await message.answer("❌ Ошибка: профиль не найден.", reply_markup=get_main_menu_inline())
         await state.clear()
         return
     
     profile = await get_profile_by_id(profile_id)
     if not profile:
-        await message.answer(
-            "❌ Ошибка: профиль не найден в БД.",
-            reply_markup=get_main_menu_inline()
-        )
+        await message.answer("❌ Ошибка: профиль не найден в БД.", reply_markup=get_main_menu_inline())
         await state.clear()
         return
     
     comment = message.text
     
-    # Обновить статус (остаётся pending для повторной подачи)
     await update_profile_status(profile_id, 'pending', comment)
     
-    # Уведомить пользователя
     await bot.send_message(
         chat_id=profile['tg_id'],
         text=(
@@ -237,11 +210,7 @@ async def admin_send_comment(message: types.Message, state: FSMContext, bot: Bot
     except Exception as e:
         logger.error(f"Не удалось удалить сообщение модерации: {e}")
     
-    await message.answer(
-        "✅ **Сообщение отправлено пользователю!**",
-        reply_markup=get_main_menu_inline()
-    )
-    
+    await message.answer("✅ **Сообщение отправлено пользователю!**", reply_markup=get_main_menu_inline())
     await state.clear()
     logger.info(f"Comment sent to user {profile['tg_id']} for profile {profile_id}")
 
