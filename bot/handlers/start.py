@@ -16,18 +16,32 @@ async def delete_message_safe(bot: Bot, chat_id: int, message_id: int):
     except Exception as e:
         logger.debug(f"Could not delete message {message_id}: {e}")
 
-async def send_main_menu(message: types.Message, bot: Bot, delete_old: bool = True):
-    """Отправить главное меню, удалив предыдущее"""
-    tg_id = message.from_user.id
+async def _delete_participant_list(bot: Bot, user_tg_id: int):
+    """Удалить список участников по сохранённому ID"""
+    saved_id = await get_user_last_message(user_tg_id)
     
+    if saved_id and saved_id < 0:  # Отрицательное = это был список анкет
+        last_list_msg_id = abs(saved_id)
+        
+        # Удаляем финальное сообщение списка (с кнопками)
+        await delete_message_safe(bot, user_tg_id, last_list_msg_id)
+        
+        # Удаляем предыдущие ~25 сообщений (анкеты + фото)
+        for offset in range(1, 30):
+            await delete_message_safe(bot, user_tg_id, last_list_msg_id - offset)
+        
+        logger.debug(f"Deleted participant list for user {user_tg_id}")
+
+async def send_main_menu(message: types.Message, bot: Bot, user_tg_id: int, delete_old: bool = True):
+    """Отправить главное меню, удалив предыдущее"""
     # Проверяем, есть ли у пользователя одобренная анкета
-    has_profile = await user_has_approved_profile(tg_id)
+    has_profile = await user_has_approved_profile(user_tg_id)
     
     # Удаляем предыдущее меню если нужно
     if delete_old:
-        last_menu_id = await get_user_last_message(tg_id)
-        if last_menu_id:
-            await delete_message_safe(bot, tg_id, last_menu_id)
+        last_menu_id = await get_user_last_message(user_tg_id)
+        if last_menu_id and last_menu_id > 0:  # Положительное = меню
+            await delete_message_safe(bot, user_tg_id, last_menu_id)
     
     # Отправляем новое меню
     new_message = await message.answer(
@@ -36,16 +50,16 @@ async def send_main_menu(message: types.Message, bot: Bot, delete_old: bool = Tr
         reply_markup=get_main_menu_inline(has_profile)
     )
     
-    # Сохраняем ID нового меню
-    await save_user_message(tg_id, new_message.message_id)
-    logger.info(f"Sent main menu to user {tg_id}, message_id={new_message.message_id}")
+    # Сохраняем ID нового меню (положительное = меню)
+    await save_user_message(user_tg_id, new_message.message_id)
+    logger.info(f"Sent main menu to user {user_tg_id}, message_id={new_message.message_id}")
     return new_message
 
 async def send_participants_list(message: types.Message, bot: Bot, user_tg_id: int):
     """Отправить список участников, удалив предыдущее меню"""
     # Удаляем предыдущее меню
     last_menu_id = await get_user_last_message(user_tg_id)
-    if last_menu_id:
+    if last_menu_id and last_menu_id > 0:  # Положительное = меню
         await delete_message_safe(bot, user_tg_id, last_menu_id)
     
     # Проверяем доступ
@@ -106,8 +120,7 @@ async def send_participants_list(message: types.Message, bot: Bot, user_tg_id: i
         reply_markup=get_refresh_keyboard()
     )
     
-    # Сохраняем ID последнего сообщения списка (для удаления при возврате в меню)
-    # Используем отрицательное значение как маркер "это список, а не меню"
+    # Сохраняем ID последнего сообщения списка (отрицательное = список)
     await save_user_message(user_tg_id, -final_msg.message_id)
     
     # Если админ - показываем админ-панель
@@ -123,11 +136,11 @@ async def send_participants_list(message: types.Message, bot: Bot, user_tg_id: i
 @router.callback_query(F.data == "view_participants")
 async def view_participants_callback(callback: types.CallbackQuery, bot: Bot):
     """Показать список участников (удаляет меню)"""
-    user_tg_id = callback.from_user.id
+    user_tg_id = callback.from_user.id  # ← ПРАВИЛЬНО: берём из callback
     
     # 1. Удаляем предыдущее меню
     last_menu_id = await get_user_last_message(user_tg_id)
-    if last_menu_id and last_menu_id > 0:  # Положительное = меню
+    if last_menu_id and last_menu_id > 0:
         await delete_message_safe(bot, user_tg_id, last_menu_id)
     
     # 2. Безопасно удаляем сообщение с кнопкой
@@ -139,40 +152,35 @@ async def view_participants_callback(callback: types.CallbackQuery, bot: Bot):
 
 @router.callback_query(F.data == "refresh_list")
 async def refresh_list_callback(callback: types.CallbackQuery, bot: Bot):
-    """Обновить список"""
-    user_tg_id = callback.from_user.id
+    """Обновить список (удаляет старый список перед показом нового)"""
+    user_tg_id = callback.from_user.id  # ← ПРАВИЛЬНО: берём из callback
     
-    # Безопасно удаляем предыдущее сообщение с кнопками
+    # 1. Удаляем СТАРЫЙ список участников (если есть)
+    await _delete_participant_list(bot, user_tg_id)
+    
+    # 2. Безопасно удаляем сообщение с кнопкой "Обновить"
     await delete_message_safe(bot, user_tg_id, callback.message.message_id)
     
-    # Показываем новый список
+    # 3. Показываем НОВЫЙ список
     await send_participants_list(callback.message, bot, user_tg_id)
     await callback.answer("Список обновлён! 🔄")
 
 @router.callback_query(F.data == "back_to_menu")
 async def back_to_menu_callback(callback: types.CallbackQuery, bot: Bot):
     """Вернуться в меню (удаляет список анкет и показывает чистое меню)"""
-    user_tg_id = callback.from_user.id
+    user_tg_id = callback.from_user.id  # ← ПРАВИЛЬНО: берём из callback
     
-    # 1. Получаем сохранённый ID (может быть отрицательным = список)
+    # 1. Удаляем список участников (если он был показан)
+    await _delete_participant_list(bot, user_tg_id)
+    
+    # 2. Если был показан меню (а не список) — удаляем его
     saved_id = await get_user_last_message(user_tg_id)
-    
-    if saved_id and saved_id < 0:  # Отрицательное = это был список анкет
-        last_list_msg_id = abs(saved_id)
-        
-        # Удаляем финальное сообщение списка (с кнопками)
-        await delete_message_safe(bot, user_tg_id, last_list_msg_id)
-        
-        # Удаляем предыдущие ~20 сообщений (анкеты) - сообщение в чате имеют последовательные ID
-        for offset in range(1, 25):
-            await delete_message_safe(bot, user_tg_id, last_list_msg_id - offset)
-    
-    elif saved_id and saved_id > 0:  # Положительное = это было меню
+    if saved_id and saved_id > 0:  # Положительное = меню
         await delete_message_safe(bot, user_tg_id, saved_id)
     
-    # 2. Безопасно удаляем сообщение с кнопкой "В главное меню"
+    # 3. Безопасно удаляем сообщение с кнопкой "В главное меню"
     await delete_message_safe(bot, user_tg_id, callback.message.message_id)
     
-    # 3. Показываем чистое меню
-    await send_main_menu(callback.message, bot, delete_old=False)
+    # 4. Показываем чистое меню (передаём user_tg_id явно!)
+    await send_main_menu(callback.message, bot, user_tg_id, delete_old=False)
     await callback.answer()
