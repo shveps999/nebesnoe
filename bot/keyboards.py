@@ -4,11 +4,11 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 def get_main_menu_inline(has_profile=False):
     """Главное меню - инлайн кнопки"""
     builder = InlineKeyboardBuilder()
-    builder.button(text="👥 Посмотреть участников", callback_data="view_participants")
-    builder.button(text="📝 Добавить анкету", callback_data="add_profile")
+    builder.button(text="📰 Посмотреть участников", callback_data="view_participants")
+    builder.button(text="🪩 Присоединиться", callback_data="add_profile")
     
     if has_profile:
-        builder.button(text="⚙️ Управление анкетой", callback_data="manage_profile")
+        builder.button(text="⚙️ Управление формой", callback_data="manage_profile")
     
     builder.adjust(1)
     return builder.as_markup()
@@ -16,8 +16,8 @@ def get_main_menu_inline(has_profile=False):
 def get_manage_profile_keyboard():
     """Кнопки управления анкетой"""
     builder = InlineKeyboardBuilder()
-    builder.button(text="✏️ Редактировать анкету", callback_data="edit_profile")
-    builder.button(text="🗑️ Удалить анкету", callback_data="delete_profile")
+    builder.button(text="📝 Редактировать", callback_data="edit_profile")
+    builder.button(text="🗑️ Удалить форму", callback_data="delete_profile")
     builder.button(text="🏠 В главное меню", callback_data="back_to_menu")
     builder.adjust(1)
     return builder.as_markup()
@@ -25,8 +25,8 @@ def get_manage_profile_keyboard():
 def get_refresh_keyboard():
     """Кнопка обновления списка"""
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔄 Обновить список", callback_data="refresh_list")
-    builder.button(text="🏠 В главное меню", callback_data="back_to_menu")
+    builder.button(text="Обновить", callback_data="refresh_list")
+    builder.button(text="В меню", callback_data="back_to_menu")
     builder.adjust(2)
     return builder.as_markup()
 
@@ -41,7 +41,7 @@ def get_moderation_keyboard(profile_id):
 def get_cancel_keyboard():
     """Кнопка отмены заполнения анкеты"""
     builder = InlineKeyboardBuilder()
-    builder.button(text="❌ Отмена", callback_data="cancel_process")
+    builder.button(text="Отмена", callback_data="cancel_process")
     return builder.as_markup()
 
 def get_back_to_menu_keyboard():
@@ -53,7 +53,7 @@ def get_back_to_menu_keyboard():
 def get_clear_all_confirm_keyboard():
     """Кнопки подтверждения очистки всех анкет"""
     builder = InlineKeyboardBuilder()
-    builder.button(text="⚠️ ДА, УДАЛИТЬ ВСЁ", callback_data="clear_all_confirm")
+    builder.button(text="⚠️ Да, удалить все", callback_data="clear_all_confirm")
     builder.button(text="❌ Отмена", callback_data="clear_all_cancel")
     builder.adjust(2)
     return builder.as_markup()
@@ -69,7 +69,7 @@ def get_admin_keyboard():
 def get_confirm_delete_keyboard():
     """Подтверждение удаления своей анкеты"""
     builder = InlineKeyboardBuilder()
-    builder.button(text="⚠️ ДА, УДАЛИТЬ", callback_data="delete_profile_confirm")
+    builder.button(text="⚠️ Да, удалить", callback_data="delete_profile_confirm")
     builder.button(text="❌ Отмена", callback_data="manage_profile")
     builder.adjust(2)
     return builder.as_markup()
