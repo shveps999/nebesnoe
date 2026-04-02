@@ -1,11 +1,25 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-def get_main_menu_inline():
-    """Главное меню - инлайн кнопки (всегда под сообщением)"""
+def get_main_menu_inline(has_profile=False):
+    """Главное меню - инлайн кнопки"""
     builder = InlineKeyboardBuilder()
     builder.button(text="👥 Посмотреть участников", callback_data="view_participants")
     builder.button(text="📝 Добавить анкету", callback_data="add_profile")
+    
+    # Кнопка управления анкетой только если есть одобренная анкета
+    if has_profile:
+        builder.button(text="⚙️ Управление анкетой", callback_data="manage_profile")
+    
+    builder.adjust(1)
+    return builder.as_markup()
+
+def get_manage_profile_keyboard():
+    """Кнопки управления анкетой"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✏️ Редактировать анкету", callback_data="edit_profile")
+    builder.button(text="🗑️ Удалить анкету", callback_data="delete_profile")
+    builder.button(text="🏠 В главное меню", callback_data="back_to_menu")
     builder.adjust(1)
     return builder.as_markup()
 
@@ -13,6 +27,8 @@ def get_refresh_keyboard():
     """Кнопка обновления списка"""
     builder = InlineKeyboardBuilder()
     builder.button(text="🔄 Обновить список", callback_data="refresh_list")
+    builder.button(text="🏠 В главное меню", callback_data="back_to_menu")
+    builder.adjust(2)
     return builder.as_markup()
 
 def get_moderation_keyboard(profile_id):
@@ -48,5 +64,13 @@ def get_admin_keyboard():
     builder = InlineKeyboardBuilder()
     builder.button(text="🗑️ Удалить все анкеты", callback_data="clear_all")
     builder.button(text="📊 Статистика", callback_data="admin_stats")
+    builder.adjust(2)
+    return builder.as_markup()
+
+def get_confirm_delete_keyboard():
+    """Подтверждение удаления своей анкеты"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="⚠️ ДА, УДАЛИТЬ", callback_data="delete_profile_confirm")
+    builder.button(text="❌ Отмена", callback_data="manage_profile")
     builder.adjust(2)
     return builder.as_markup()
