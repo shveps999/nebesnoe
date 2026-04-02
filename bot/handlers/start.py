@@ -67,10 +67,8 @@ async def send_participants_list(message: types.Message, bot: Bot, user_tg_id: i
         has_profile = await user_has_approved_profile(user_tg_id)
         if not has_profile:
             await message.answer(
-                "⛔ **Доступ ограничен**\n\n"
-                "Чтобы просматривать анкеты других участников, "
-                "сначала добавьте **свою анкету**.\n\n"
-                "Это необходимо для поддержания активности в сообществе.",
+                "Чтобы посмотреть список участников, "
+                "сначала добавьте **свою анкету**.\n\n",
                 parse_mode="Markdown",
                 reply_markup=get_main_menu_inline()
             )
@@ -81,7 +79,7 @@ async def send_participants_list(message: types.Message, bot: Bot, user_tg_id: i
     
     if not profiles:
         await message.answer(
-            "📭 Пока нет одобренных анкет.\n\nБудьте первым!",
+            "Список пока пуст.\n\nБудь первым!",
             reply_markup=get_main_menu_inline()
         )
         return
@@ -90,7 +88,7 @@ async def send_participants_list(message: types.Message, bot: Bot, user_tg_id: i
     
     # Отправляем анкеты БЕЗ кнопок
     for profile in profiles:
-        caption = f"👤 **{profile['name']}**\n💼 {profile['occupation']}\n🔍 Ищет: {profile['looking']}"
+        caption = f"📌 **{profile['name']}**\n {profile['occupation']}\n Ищет: {profile['looking']}"
         try:
             if profile['photo_url']:
                 sent_msg = await message.answer_photo(
@@ -115,7 +113,6 @@ async def send_participants_list(message: types.Message, bot: Bot, user_tg_id: i
     
     # Кнопки ТОЛЬКО в конце
     final_msg = await message.answer(
-        "📋 **Конец списка.**",
         parse_mode="Markdown",
         reply_markup=get_refresh_keyboard()
     )
