@@ -111,9 +111,10 @@ async def send_participants_list(message: types.Message, bot: Bot, user_tg_id: i
             if first_msg_id is None:
                 first_msg_id = sent_msg.message_id
     
-    # Кнопки ТОЛЬКО в конце
+    # ✅ Кнопки ТОЛЬКО в конце (БЕЗ текста "Конец списка")
+    # Используем пробел как text — он не виден, но удовлетворяет требованию API
     final_msg = await message.answer(
-        parse_mode="Markdown",
+        " ",  # ← простой пробел (визуально не заметен)
         reply_markup=get_refresh_keyboard()
     )
     
