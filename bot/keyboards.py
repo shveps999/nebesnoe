@@ -7,7 +7,6 @@ def get_main_menu_inline(has_profile=False):
     builder.button(text="👥 Посмотреть участников", callback_data="view_participants")
     builder.button(text="📝 Добавить анкету", callback_data="add_profile")
     
-    # Кнопка управления анкетой только если есть одобренная анкета
     if has_profile:
         builder.button(text="⚙️ Управление анкетой", callback_data="manage_profile")
     
