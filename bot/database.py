@@ -4,6 +4,21 @@ from bot.config import DB_CONFIG
 async def get_connection():
     return await aiomysql.connect(**DB_CONFIG)
 
+async def init_consents_table():
+    """Создать таблицу согласий если нет"""
+    conn = await get_connection()
+    async with conn.cursor() as cursor:
+        await cursor.execute("""
+            CREATE TABLE IF NOT EXISTS user_consents (
+                tg_id BIGINT PRIMARY KEY,
+                consented BOOLEAN DEFAULT FALSE,
+                consented_at TIMESTAMP NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            )
+        """)
+        await conn.commit()
+    conn.close()
+
 async def init_db():
     """Создание таблиц при запуске"""
     conn = await get_connection()
@@ -32,6 +47,9 @@ async def init_db():
         
         await conn.commit()
     conn.close()
+    
+    # Инициализировать таблицу согласий
+    await init_consents_table()
 
 async def add_profile(tg_id, name, occupation, looking, tg_username, photo_url):
     conn = await get_connection()
@@ -173,10 +191,6 @@ async def get_user_last_message(tg_id: int) -> int:
     conn.close()
     return result[0] if result else None
 
-# ============================================
-# НОВЫЕ ФУНКЦИИ ДЛЯ РАССЫЛКИ
-# ============================================
-
 async def get_all_user_tg_ids():
     """Получить список всех уникальных Telegram ID пользователей"""
     conn = await get_connection()
@@ -194,3 +208,24 @@ async def get_approved_user_tg_ids():
         result = await cursor.fetchall()
     conn.close()
     return [row[0] for row in result]
+
+async def user_has_consented(tg_id: int) -> bool:
+    """Проверить, дал ли пользователь согласие"""
+    conn = await get_connection()
+    async with conn.cursor() as cursor:
+        await cursor.execute("SELECT consented FROM user_consents WHERE tg_id = %s", (tg_id,))
+        result = await cursor.fetchone()
+    conn.close()
+    return result[0] if result else False
+
+async def save_user_consent(tg_id: int):
+    """Сохранить согласие пользователя"""
+    conn = await get_connection()
+    async with conn.cursor() as cursor:
+        await cursor.execute("""
+            INSERT INTO user_consents (tg_id, consented, consented_at) 
+            VALUES (%s, TRUE, NOW())
+            ON DUPLICATE KEY UPDATE consented = TRUE, consented_at = NOW()
+        """, (tg_id,))
+        await conn.commit()
+    conn.close()
