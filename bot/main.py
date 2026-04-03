@@ -5,10 +5,10 @@ import os
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart
 from bot.config import BOT_TOKEN, ADMIN_ID
-from bot.database import init_db
+from bot.database import init_db, user_has_consented
 from bot.handlers import start, profile, admin
+from bot.handlers.start import send_main_menu, show_consent_flow
 from bot.keyboards import get_main_menu_inline
-from bot.handlers.start import send_main_menu
 
 os.makedirs("logs", exist_ok=True)
 os.environ["PYTHONUNBUFFERED"] = "1"
@@ -57,9 +57,14 @@ async def main():
     
     @dp.message(CommandStart())
     async def cmd_start(message: types.Message, bot: Bot):
-        # ← ИСПРАВЛЕНО: передаём user_tg_id явно
-        await send_main_menu(message, bot, message.from_user.id)
-        root_logger.info(f"User {message.from_user.id} pressed /start")
+        user_tg_id = message.from_user.id
+        
+        if not await user_has_consented(user_tg_id):
+            await show_consent_flow(message, bot)
+        else:
+            await send_main_menu(message, bot, user_tg_id)
+        
+        root_logger.info(f"User {user_tg_id} pressed /start")
     
     root_logger.info("Бот запущен и готов к работе...")
     print(">>> POLLING STARTED <<<", flush=True)
