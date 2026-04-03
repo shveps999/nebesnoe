@@ -172,3 +172,25 @@ async def get_user_last_message(tg_id: int) -> int:
         result = await cursor.fetchone()
     conn.close()
     return result[0] if result else None
+
+# ============================================
+# НОВЫЕ ФУНКЦИИ ДЛЯ РАССЫЛКИ
+# ============================================
+
+async def get_all_user_tg_ids():
+    """Получить список всех уникальных Telegram ID пользователей"""
+    conn = await get_connection()
+    async with conn.cursor() as cursor:
+        await cursor.execute("SELECT DISTINCT tg_id FROM profiles")
+        result = await cursor.fetchall()
+    conn.close()
+    return [row[0] for row in result]
+
+async def get_approved_user_tg_ids():
+    """Получить список Telegram ID пользователей с одобренными анкетами"""
+    conn = await get_connection()
+    async with conn.cursor() as cursor:
+        await cursor.execute("SELECT DISTINCT tg_id FROM profiles WHERE status = 'approved'")
+        result = await cursor.fetchall()
+    conn.close()
+    return [row[0] for row in result]
