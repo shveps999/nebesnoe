@@ -110,7 +110,7 @@ async def send_participants_list(message: types.Message, bot: Bot, user_tg_id: i
         
         caption = (
             f"**{profile['name']}**\n\n"
-            f"🪄 {profile['occupation']}\n\n"
+            f"🪄 Сфера: {profile['occupation']}\n\n"
             f"💡 Ищу: {profile['looking']}"
             f"{tg_line}"
         )
