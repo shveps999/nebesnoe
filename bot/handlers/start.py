@@ -8,7 +8,7 @@ from bot.config import ADMIN_ID
 logger = logging.getLogger(__name__)
 router = Router()
 
-PRIVACY_POLICY_URL = "https://clck.ru/3SvSMd"
+PRIVACY_POLICY_URL = "https://docs.google.com/document/d/1bAcr5y_Ne3oFTOYPK8TXbOe09e-ZyMJhHrb8fpMug0M/edit?usp=sharing"
 
 async def delete_message_safe(bot: Bot, chat_id: int, message_id: int):
     """Безопасное удаление сообщения (игнорирует ошибки)"""
@@ -61,7 +61,7 @@ async def show_consent_flow(message: types.Message, bot: Bot):
         "🔹 Собираем: имя, сферу деятельности, кого ищете, фото, никнейм в тг\n"
         "🔹 Удалить анкету: через меню «Управление анкетой» → «Удалить»\n"
         "🔹 Перед каждым новым ивентом — удаляется автоматически\n\n"
-        f"Нажимая «Я согласен», вы принимаете условия [Политики обработки персональных данных]({PRIVACY_POLICY_URL})."
+        f"Нажимая «Согласен», вы принимаете условия [Политики обработки персональных данных]({PRIVACY_POLICY_URL})."
     )
     
     consent_msg = await message.answer(
