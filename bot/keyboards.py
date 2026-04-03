@@ -4,11 +4,11 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 def get_main_menu_inline(has_profile=False):
     """Главное меню - инлайн кнопки"""
     builder = InlineKeyboardBuilder()
-    builder.button(text="🪩 Список участников", callback_data="view_participants")
+    builder.button(text="🎯 Список участников", callback_data="view_participants")
     builder.button(text="✍️ Рассказать о себе", callback_data="add_profile")
     
     if has_profile:
-        builder.button(text="⚙️ Управление визиткой", callback_data="manage_profile")
+        builder.button(text="🗝 Управление анкетой", callback_data="manage_profile")
     
     builder.adjust(1)
     return builder.as_markup()
@@ -17,7 +17,7 @@ def get_manage_profile_keyboard():
     """Кнопки управления анкетой"""
     builder = InlineKeyboardBuilder()
     builder.button(text="📝 Редактировать", callback_data="edit_profile")
-    builder.button(text="🗑️ Удалить визитку", callback_data="delete_profile")
+    builder.button(text="🗑️ Удалить анкету", callback_data="delete_profile")
     builder.button(text="🏠 В главное меню", callback_data="back_to_menu")
     builder.adjust(1)
     return builder.as_markup()
