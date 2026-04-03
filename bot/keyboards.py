@@ -5,7 +5,7 @@ def get_main_menu_inline(has_profile=False):
     """Главное меню - инлайн кнопки"""
     builder = InlineKeyboardBuilder()
     builder.button(text="🪽 Список участников", callback_data="view_participants")
-    builder.button(text="📩 Рассказать о себе", callback_data="add_profile")
+    builder.button(text="🔖 Добавить анкету", callback_data="add_profile")
     
     if has_profile:
         builder.button(text="🗝 Управление анкетой", callback_data="manage_profile")
