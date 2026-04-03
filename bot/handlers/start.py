@@ -8,7 +8,7 @@ from bot.config import ADMIN_ID
 logger = logging.getLogger(__name__)
 router = Router()
 
-PRIVACY_POLICY_URL = "https://docs.google.com/document/d/1bAcr5y_Ne3oFTOYPK8TXbOe09e-ZyMJhHrb8fpMug0M/edit?usp=sharing"
+PRIVACY_POLICY_URL = "https://clck.ru/3SvSMd"
 
 async def delete_message_safe(bot: Bot, chat_id: int, message_id: int):
     """Безопасное удаление сообщения (игнорирует ошибки)"""
@@ -39,7 +39,7 @@ async def send_main_menu(message: types.Message, bot: Bot, user_tg_id: int, dele
             await delete_message_safe(bot, user_tg_id, last_menu_id)
     
     new_message = await message.answer(
-        "🏠 **Главное меню**\n\nВыберите действие:",
+        "🪩 **Тусовка Небесного**\n\nВыбери действие:",
         parse_mode="Markdown",
         reply_markup=get_main_menu_inline(has_profile)
     )
@@ -59,8 +59,7 @@ async def show_consent_flow(message: types.Message, bot: Bot):
     consent_text = (
         "Перед тем, как начать, нам нужно получить твое согласие на обработку персональных данных:\n\n"
         "🔹 Собираем: имя, сферу деятельности, кого ищете, фото, никнейм в тг\n"
-        "🔹 Данные — только для участия в нетворкинг-боте\n"
-        "🔹 Удалить анкету: через меню «🗝 Управление анкетой» → «🗑️ Удалить анкету»\n"
+        "🔹 Удалить анкету: через меню «Управление анкетой» → «Удалить анкету»\n"
         "🔹 Перед каждым новым ивентом — удаляется автоматически\n\n"
         f"Нажимая «Я согласен», вы принимаете условия [Политики обработки персональных данных]({PRIVACY_POLICY_URL})."
     )
