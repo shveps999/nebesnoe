@@ -45,7 +45,7 @@ async def send_main_menu(message: types.Message, bot: Bot, user_tg_id: int, dele
     
     # Отправляем новое меню
     new_message = await message.answer(
-        "🏠 **Добро пожаловать в нетворкинг-бот Небесного**\n\nВыбери действие:",
+        "💫 **Добро пожаловать в нетворкинг-бот Небесного**\n\nВыбери действие:",
         parse_mode="Markdown",
         reply_markup=get_main_menu_inline(has_profile)
     )
@@ -95,7 +95,7 @@ async def send_participants_list(message: types.Message, bot: Bot, user_tg_id: i
         
         caption = (
             f"**{profile['name']}**\n\n"
-            f"🪄 {profile['occupation']}\n\n"
+            f"🪄 Сфера: {profile['occupation']}\n\n"
             f"💡 Ищу: {profile['looking']}"
             f"{tg_line}"
         )
