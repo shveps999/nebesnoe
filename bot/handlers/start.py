@@ -67,7 +67,7 @@ async def show_consent_flow(message: types.Message, bot: Bot):
     consent_msg = await message.answer(
         consent_text,
         parse_mode="Markdown",
-        disable_web_page_preview=False,
+        disable_web_page_preview=True,
         reply_markup=get_consent_keyboard()
     )
     
