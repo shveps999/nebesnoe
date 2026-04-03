@@ -45,7 +45,7 @@ async def send_main_menu(message: types.Message, bot: Bot, user_tg_id: int, dele
     
     # Отправляем новое меню
     new_message = await message.answer(
-        "🏠 **Главное меню**\n\nВыберите действие:",
+        "🏠 **Добро пожаловать в нетворкинг-бот Небесного**\n\nВыбери действие:",
         parse_mode="Markdown",
         reply_markup=get_main_menu_inline(has_profile)
     )
@@ -68,7 +68,7 @@ async def send_participants_list(message: types.Message, bot: Bot, user_tg_id: i
         if not has_profile:
             await message.answer(
                 "Чтобы посмотреть список участников, "
-                "сначала добавьте **свою анкету**.\n\n",
+                "сначала добавь **свою анкету**.\n\n",
                 parse_mode="Markdown",
                 reply_markup=get_main_menu_inline()
             )
@@ -124,7 +124,7 @@ async def send_participants_list(message: types.Message, bot: Bot, user_tg_id: i
     
     # ✅ Кнопки ТОЛЬКО в конце (с минимальным текстом ".")
     final_msg = await message.answer(
-        ".",  # ← точка (минимальный видимый текст)
+        "Выбери действие",  # ← точка (минимальный видимый текст)
         reply_markup=get_refresh_keyboard()
     )
     
