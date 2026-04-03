@@ -5,7 +5,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.filters import Command
 from bot.keyboards import get_cancel_keyboard, get_main_menu_inline, get_manage_profile_keyboard, get_confirm_delete_keyboard
-from bot.database import add_profile, update_profile, user_has_approved_profile, get_profile_by_tg_id, delete_profile_by_tg_id, update_profile_status
+from bot.database import add_profile, update_profile, user_has_approved_profile, get_profile_by_tg_id, delete_profile_by_tg_id, update_profile_status, user_has_consented
 from bot.config import ADMIN_ID, MODERATION_CHAT_ID
 from bot.s3_storage import upload_photo_to_s3, delete_photo_from_s3
 from bot.keyboards import get_moderation_keyboard
@@ -18,7 +18,7 @@ class ProfileForm(StatesGroup):
     name = State()
     occupation = State()
     looking = State()
-    tg_username = State()  # ← НОВОЕ: Telegram username
+    tg_username = State()
     photo = State()
 
 class EditForm(StatesGroup):
@@ -26,7 +26,7 @@ class EditForm(StatesGroup):
     name = State()
     occupation = State()
     looking = State()
-    tg_username = State()  # ← НОВОЕ
+    tg_username = State()
     photo = State()
 
 async def delete_message_safe(bot: Bot, chat_id: int, message_id: int):
@@ -40,10 +40,9 @@ def validate_tg_username(text: str) -> bool:
     """Проверяет что username начинается с @ и содержит только допустимые символы"""
     text = text.strip()
     if text.lower() == 'skip' or text == '/skip':
-        return True  # Пропуск разрешён
+        return True
     if not text.startswith('@'):
         return False
-    # Проверяем формат: @username (3-32 символа, буквы, цифры, подчёркивания)
     pattern = r'^@[a-zA-Z0-9_]{3,32}$'
     return bool(re.match(pattern, text))
 
@@ -59,7 +58,13 @@ def format_tg_username(text: str) -> str:
 @router.callback_query(F.data == "add_profile")
 async def add_profile_callback(callback: types.CallbackQuery, state: FSMContext):
     """Обработка кнопки 'Добавить анкету'"""
-    has_profile = await user_has_approved_profile(callback.from_user.id)
+    user_tg_id = callback.from_user.id
+    
+    if not await user_has_consented(user_tg_id):
+        await callback.answer("⚠️ Сначала дайте согласие на обработку данных", show_alert=True)
+        return
+    
+    has_profile = await user_has_approved_profile(user_tg_id)
     
     if has_profile:
         await callback.message.answer(
@@ -79,7 +84,13 @@ async def add_profile_callback(callback: types.CallbackQuery, state: FSMContext)
 @router.callback_query(F.data == "manage_profile")
 async def manage_profile_callback(callback: types.CallbackQuery, state: FSMContext):
     """Обработка кнопки 'Управление анкетой'"""
-    has_profile = await user_has_approved_profile(callback.from_user.id)
+    user_tg_id = callback.from_user.id
+    
+    if not await user_has_consented(user_tg_id):
+        await callback.answer("⚠️ Сначала дайте согласие на обработку данных", show_alert=True)
+        return
+    
+    has_profile = await user_has_approved_profile(user_tg_id)
     
     if not has_profile:
         await callback.message.answer(
@@ -100,7 +111,13 @@ async def manage_profile_callback(callback: types.CallbackQuery, state: FSMConte
 @router.callback_query(F.data == "edit_profile")
 async def edit_profile_callback(callback: types.CallbackQuery, state: FSMContext):
     """Начало редактирования анкеты"""
-    profile = await get_profile_by_tg_id(callback.from_user.id)
+    user_tg_id = callback.from_user.id
+    
+    if not await user_has_consented(user_tg_id):
+        await callback.answer("⚠️ Сначала дайте согласие на обработку данных", show_alert=True)
+        return
+    
+    profile = await get_profile_by_tg_id(user_tg_id)
     
     if not profile or profile['status'] != 'approved':
         await callback.message.answer(
@@ -111,7 +128,7 @@ async def edit_profile_callback(callback: types.CallbackQuery, state: FSMContext
         return
     
     await state.update_data(profile_id=profile['id'])
-    await delete_message_safe(callback.bot, callback.from_user.id, callback.message.message_id)
+    await delete_message_safe(callback.bot, user_tg_id, callback.message.message_id)
     msg = await callback.message.answer(
         f"📝 **Редактирование анкеты**\n\n"
         f"Текущее имя: {profile['name']}\n\n"
@@ -126,7 +143,13 @@ async def edit_profile_callback(callback: types.CallbackQuery, state: FSMContext
 @router.callback_query(F.data == "delete_profile")
 async def delete_profile_callback(callback: types.CallbackQuery):
     """Подтверждение удаления анкеты"""
-    has_profile = await user_has_approved_profile(callback.from_user.id)
+    user_tg_id = callback.from_user.id
+    
+    if not await user_has_consented(user_tg_id):
+        await callback.answer("⚠️ Сначала дайте согласие на обработку данных", show_alert=True)
+        return
+    
+    has_profile = await user_has_approved_profile(user_tg_id)
     
     if not has_profile:
         await callback.message.answer(
@@ -136,7 +159,7 @@ async def delete_profile_callback(callback: types.CallbackQuery):
         await callback.answer()
         return
     
-    await delete_message_safe(callback.bot, callback.from_user.id, callback.message.message_id)
+    await delete_message_safe(callback.bot, user_tg_id, callback.message.message_id)
     await callback.message.answer(
         "⚠️ **Удаление анкеты**\n\n"
         "Уверен, что хочешь удалить свою визитку?\n\n",
@@ -148,7 +171,13 @@ async def delete_profile_callback(callback: types.CallbackQuery):
 @router.callback_query(F.data == "delete_profile_confirm")
 async def delete_profile_confirm(callback: types.CallbackQuery, bot: Bot):
     """Подтверждение удаления анкеты"""
-    profile = await get_profile_by_tg_id(callback.from_user.id)
+    user_tg_id = callback.from_user.id
+    
+    if not await user_has_consented(user_tg_id):
+        await callback.answer("⚠️ Сначала дайте согласие на обработку данных", show_alert=True)
+        return
+    
+    profile = await get_profile_by_tg_id(user_tg_id)
     
     if not profile:
         await callback.message.answer(
@@ -161,16 +190,16 @@ async def delete_profile_confirm(callback: types.CallbackQuery, bot: Bot):
     if profile['photo_url']:
         await delete_photo_from_s3(profile['photo_url'])
     
-    deleted_count, _ = await delete_profile_by_tg_id(callback.from_user.id)
+    deleted_count, _ = await delete_profile_by_tg_id(user_tg_id)
     
-    await delete_message_safe(bot, callback.from_user.id, callback.message.message_id)
+    await delete_message_safe(bot, user_tg_id, callback.message.message_id)
     await callback.message.answer(
         "**Визитка успешно удалена**\n\n",
         parse_mode="Markdown",
         reply_markup=get_main_menu_inline()
     )
     
-    logger.info(f"User {callback.from_user.id} deleted their profile")
+    logger.info(f"User {user_tg_id} deleted their profile")
     await callback.answer()
 
 @router.message(EditForm.name, F.text)
@@ -248,7 +277,6 @@ async def edit_process_tg_username(message: types.Message, state: FSMContext, bo
     
     text = message.text.strip()
     
-    # Проверяем на пропуск
     if text.lower() == 'skip' or text == '/skip':
         tg_username = None
         msg = await message.answer(
@@ -262,7 +290,6 @@ async def edit_process_tg_username(message: types.Message, state: FSMContext, bo
         await state.set_state(EditForm.photo)
         return
     
-    # Проверяем формат
     if not validate_tg_username(text):
         msg = await message.answer(
             "❌ **Неверный формат Telegram username**\n\n"
@@ -330,7 +357,7 @@ async def edit_process_photo_not_photo(message: types.Message, state: FSMContext
     )
     await state.update_data(last_message_id=msg.message_id)
 
-async def finish_edit(message: types.Message, bot: Bot, profile_id: int, data: dict, photo_url: str, state: FSMContext):
+async def finish_edit(message: types.Message, bot: Bot, profile_id: int,  dict, photo_url: str, state: FSMContext):
     """Завершение редактирования и отправка на модерацию"""
     notification_sent = await notify_admin_edit(bot, message.from_user.id, data, photo_url, profile_id)
     
@@ -447,7 +474,6 @@ async def process_tg_username(message: types.Message, state: FSMContext, bot: Bo
     
     text = message.text.strip()
     
-    # Проверяем на пропуск
     if text.lower() == 'skip' or text == '/skip':
         tg_username = None
         msg = await message.answer(
@@ -461,7 +487,6 @@ async def process_tg_username(message: types.Message, state: FSMContext, bot: Bo
         await state.set_state(ProfileForm.photo)
         return
     
-    # Проверяем формат
     if not validate_tg_username(text):
         msg = await message.answer(
             "❌ **Неверный формат Telegram username**\n\n"
@@ -598,7 +623,7 @@ async def notify_admin(bot: Bot, user_id: int, data: dict, photo_url: str, profi
         logger.error(f"Фоллбэк уведомление тоже не отправлено: {e2}")
         return False
 
-async def notify_admin_edit(bot: Bot, user_id: int, data: dict, photo_url: str, profile_id: int) -> bool:
+async def notify_admin_edit(bot: Bot, user_id: int,  dict, photo_url: str, profile_id: int) -> bool:
     """Отправить изменения анкеты на модерацию. Возвращает True если успешно."""
     tg_username = data.get('tg_username')
     tg_line = f"\n🔗 Тг: {tg_username}" if tg_username else ""
