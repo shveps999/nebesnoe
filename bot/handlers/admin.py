@@ -1,10 +1,19 @@
 import logging
+import asyncio
 from aiogram import Router, F, types, Bot
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.filters import Command
-from bot.keyboards import get_moderation_keyboard, get_main_menu_inline, get_clear_all_confirm_keyboard, get_admin_keyboard
-from bot.database import get_pending_profiles, update_profile_status, get_profile_by_id, get_all_approved_with_photos, delete_all_approved_profiles
+from bot.keyboards import (
+    get_moderation_keyboard, get_main_menu_inline, 
+    get_clear_all_confirm_keyboard, get_admin_keyboard,
+    get_broadcast_cancel_keyboard, get_broadcast_confirm_keyboard
+)
+from bot.database import (
+    get_pending_profiles, update_profile_status, get_profile_by_id, 
+    get_all_approved_with_photos, delete_all_approved_profiles,
+    get_all_user_tg_ids, get_approved_user_tg_ids
+)
 from bot.s3_storage import delete_multiple_photos_from_s3
 from bot.config import ADMIN_ID, MODERATION_CHAT_ID
 
@@ -14,6 +23,14 @@ router = Router()
 class AdminEdit(StatesGroup):
     comment = State()
     profile_id = State()
+
+class BroadcastForm(StatesGroup):
+    message = State()
+    confirm = State()
+
+# ============================================
+# МОДЕРАЦИЯ АНКЕТ (ваши тексты сохранены)
+# ============================================
 
 @router.message(Command("clear_all"), F.from_user.id == ADMIN_ID)
 async def cmd_clear_all(message: types.Message):
@@ -223,3 +240,135 @@ async def back_to_menu_callback(callback: types.CallbackQuery):
         reply_markup=get_main_menu_inline()
     )
     await callback.answer()
+
+# ============================================
+# РАССЫЛКА УВЕДОМЛЕНИЙ (НОВЫЙ ФУНКЦИОНАЛ)
+# ============================================
+
+@router.message(Command("broadcast"), F.from_user.id == ADMIN_ID)
+async def cmd_broadcast(message: types.Message, state: FSMContext):
+    """Команда начала рассылки (только для админа)"""
+    await message.answer(
+        "📢 **Рассылка уведомлений**\n\n"
+        "Введите текст сообщения, которое нужно отправить всем пользователям бота.\n\n"
+        "Поддерживается **Markdown** форматирование.\n\n"
+        "❌ Нажмите /cancel для отмены",
+        parse_mode="Markdown",
+        reply_markup=get_broadcast_cancel_keyboard()
+    )
+    await state.set_state(BroadcastForm.message)
+    logger.info(f"Admin {message.from_user.id} started broadcast command")
+
+@router.callback_query(F.data == "broadcast_cancel", F.from_user.id == ADMIN_ID)
+async def broadcast_cancel(callback: types.CallbackQuery, state: FSMContext):
+    """Отмена рассылки"""
+    await state.clear()
+    await callback.message.edit_text(
+        "❌ **Рассылка отменена**",
+        reply_markup=get_main_menu_inline()
+    )
+    await callback.answer()
+    logger.info(f"Admin {callback.from_user.id} cancelled broadcast")
+
+@router.message(BroadcastForm.message, F.text)
+async def broadcast_preview(message: types.Message, state: FSMContext):
+    """Показать превью рассылки и запросить подтверждение"""
+    text = message.text
+    await state.update_data(broadcast_text=text)
+    
+    # Получаем количество пользователей
+    all_users = await get_all_user_tg_ids()
+    approved_users = await get_approved_user_tg_ids()
+    
+    preview = (
+        f"📢 **Предпросмотр рассылки**\n\n"
+        f"📝 **Текст сообщения:**\n{text}\n\n"
+        f"👥 **Получатели:**\n"
+        f"• Всего пользователей: **{len(all_users)}**\n"
+        f"• С одобренной анкетой: **{len(approved_users)}**\n\n"
+        f"Выберите кому отправить:"
+    )
+    
+    await message.answer(
+        preview,
+        parse_mode="Markdown",
+        reply_markup=get_broadcast_confirm_keyboard()
+    )
+    await state.set_state(BroadcastForm.confirm)
+
+@router.callback_query(F.data == "broadcast_confirm", F.from_user.id == ADMIN_ID)
+async def broadcast_send_all(callback: types.CallbackQuery, state: FSMContext, bot: Bot):
+    """Отправить всем пользователям"""
+    await callback.message.edit_text("⏳ **Отправка...**\n\nПожалуйста, подождите.")
+    await _send_broadcast(callback, state, bot, approved_only=False)
+
+@router.callback_query(F.data == "broadcast_approved_only", F.from_user.id == ADMIN_ID)
+async def broadcast_send_approved(callback: types.CallbackQuery, state: FSMContext, bot: Bot):
+    """Отправить только пользователям с одобренной анкетой"""
+    await callback.message.edit_text("⏳ **Отправка...**\n\nПожалуйста, подождите.")
+    await _send_broadcast(callback, state, bot, approved_only=True)
+
+async def _send_broadcast(callback: types.CallbackQuery, state: FSMContext, bot: Bot, approved_only: bool):
+    """Внутренняя функция отправки рассылки"""
+    data = await state.get_data()
+    text = data.get('broadcast_text')
+    
+    if not text:
+        await callback.message.edit_text("❌ **Ошибка:** Текст сообщения не найден.")
+        await state.clear()
+        return
+    
+    # Получаем список пользователей
+    if approved_only:
+        user_ids = await get_approved_user_tg_ids()
+        target = "с одобренной анкетой"
+    else:
+        user_ids = await get_all_user_tg_ids()
+        target = "всем"
+    
+    if not user_ids:
+        await callback.message.edit_text(f"❌ **Нет пользователей** {target} для рассылки.")
+        await state.clear()
+        return
+    
+    # Счётчики
+    sent = 0
+    failed = 0
+    blocked = 0
+    
+    # Отправляем каждому пользователю
+    for user_id in user_ids:
+        try:
+            await bot.send_message(
+                chat_id=user_id,
+                text=text,
+                parse_mode="Markdown"
+            )
+            sent += 1
+            await asyncio.sleep(0.05)  # Небольшая задержка чтобы не получить бан
+        except Exception as e:
+            error_str = str(e).lower()
+            if "forbidden" in error_str or "blocked" in error_str:
+                blocked += 1
+            else:
+                failed += 1
+            logger.warning(f"Failed to send to {user_id}: {e}")
+    
+    # Отчёт админу
+    report = (
+        f"✅ **Рассылка завершена!**\n\n"
+        f"📊 **Статистика:**\n"
+        f"• Получателей: **{len(user_ids)}** ({target})\n"
+        f"• ✅ Доставлено: **{sent}**\n"
+        f"• ❌ Ошибок: **{failed}**\n"
+        f"• 🚫 Заблокировали бота: **{blocked}**"
+    )
+    
+    await callback.message.edit_text(
+        report,
+        parse_mode="Markdown",
+        reply_markup=get_main_menu_inline()
+    )
+    
+    await state.clear()
+    logger.info(f"Broadcast completed by admin {callback.from_user.id}: sent={sent}, failed={failed}, blocked={blocked}")
