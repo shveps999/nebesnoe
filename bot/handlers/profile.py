@@ -372,7 +372,7 @@ async def cancel_process(callback: types.CallbackQuery, state: FSMContext, bot: 
 async def start_form(message: types.Message, state: FSMContext, bot: Bot):
     """Начало заполнения анкеты"""
     msg = await message.answer(
-        "📝 **Заполнение анкеты**\n\nВведите ваше **Имя**:",
+        "📩 **Заполнение анкеты**\n\nВведи **Имя**:",
         parse_mode="Markdown",
         reply_markup=get_cancel_keyboard()
     )
@@ -393,7 +393,7 @@ async def process_name(message: types.Message, state: FSMContext, bot: Bot):
         return
     
     await state.update_data(name=message.text.strip())
-    msg = await message.answer("☑️ Имя принято.\n\nЧем вы занимаетесь?", reply_markup=get_cancel_keyboard())
+    msg = await message.answer("✍️ Имя принято.\n\nКакое у тебя направление деятельности?", reply_markup=get_cancel_keyboard())
     await state.update_data(last_message_id=msg.message_id)
     await state.set_state(ProfileForm.occupation)
 
@@ -410,7 +410,7 @@ async def process_occupation(message: types.Message, state: FSMContext, bot: Bot
         return
     
     await state.update_data(occupation=message.text.strip())
-    msg = await message.answer("✅ Принято.\n\nКого или что вы ищете?", reply_markup=get_cancel_keyboard())
+    msg = await message.answer("✨ Записали.\n\nКого или что ищешь?", reply_markup=get_cancel_keyboard())
     await state.update_data(last_message_id=msg.message_id)
     await state.set_state(ProfileForm.looking)
 
@@ -428,10 +428,10 @@ async def process_looking(message: types.Message, state: FSMContext, bot: Bot):
     
     await state.update_data(looking=message.text.strip())
     msg = await message.answer(
-        "✅ Принято.\n\n"
-        "📱 **Ваш Telegram для связи**\n\n"
-        "Введите ваш никнейм в формате **@username** чтобы вам могли написать.\n\n"
-        "💡 Или напишите **/skip** чтобы пропустить:",
+        "💌 Принято.\n\n"
+        "📱 **Твой Telegram для связи**\n\n"
+        "Введи никнейм в формате **@username**, если хочешь, чтобы тебе могли написать\n\n"
+        "💡 Или нажми **/skip** чтобы пропустить:",
         parse_mode="Markdown",
         reply_markup=get_cancel_keyboard()
     )
@@ -451,9 +451,8 @@ async def process_tg_username(message: types.Message, state: FSMContext, bot: Bo
     if text.lower() == 'skip' or text == '/skip':
         tg_username = None
         msg = await message.answer(
-            "✅ Пропущено.\n\n"
-            "📸 **Теперь отправьте ваше фото**\n\n"
-            "⚠️ **Фото обязательно** — отправьте изображение файлом или картинкой.",
+            "🚨 Пропущено.\n\n"
+            "📸 **Теперь отправь свое фото, чтобы тебя могли узнать на ивенте**\n\n",
             parse_mode="Markdown",
             reply_markup=get_cancel_keyboard()
         )
@@ -482,9 +481,8 @@ async def process_tg_username(message: types.Message, state: FSMContext, bot: Bo
     await state.update_data(tg_username=tg_username)
     
     msg = await message.answer(
-        f"✅ Принято: **{tg_username}**\n\n"
-        "📸 **Теперь отправьте ваше фото**\n\n"
-        "⚠️ **Фото обязательно** — отправьте изображение файлом или картинкой.",
+        f"⚡️ Принято: **{tg_username}**\n\n"
+        "📸 **Теперь отправь свое фото, чтобы тебя могли узнать на ивенте**\n\n",
         parse_mode="Markdown",
         reply_markup=get_cancel_keyboard()
     )
@@ -517,7 +515,7 @@ async def process_photo(message: types.Message, state: FSMContext, bot: Bot):
     )
     
     await message.answer(
-        "✅ **Анкета отправлена на модерацию!**",
+        "**Мы получили все данные и скоро опубликуем анкету в общем списке**",
         parse_mode="Markdown",
         reply_markup=get_main_menu_inline()
     )
@@ -535,9 +533,7 @@ async def process_photo_not_photo(message: types.Message, state: FSMContext, bot
     
     msg = await message.answer(
         "❌ **Нужно отправить фото!**\n\n"
-        "📸 Пожалуйста, прикрепите изображение.\n"
-        "Текстовые сообщения не принимаются.\n\n"
-        "💡 Чтобы пропустить заполнение, нажмите **❌ Отмена**",
+        "📸 Пожалуйста, прикрепите изображение.\n",
         parse_mode="Markdown",
         reply_markup=get_cancel_keyboard()
     )
