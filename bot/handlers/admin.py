@@ -134,9 +134,9 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot):
     await bot.send_message(
         chat_id=profile['tg_id'],
         text=(
-            "**Ваша анкета опубликована!**\n\n"
-            "Теперь вы можете просматривать список участников.\n\n"
-            "До встречи в Небесном! 🎉"
+            "**Твоя визитка опубликована!**\n\n"
+            "Теперь ты можешь смотреть список участников.\n\n"
+            "До встречи в Небесном ❤️‍🔥"
         ),
         parse_mode="Markdown",
         reply_markup=get_main_menu_inline(has_profile=True)
@@ -197,7 +197,7 @@ async def admin_send_comment(message: types.Message, state: FSMContext, bot: Bot
         text=(
             f"⚠️ **Организатор запросил изменения**\n\n"
             f"**Комментарий:**\n{comment}\n\n"
-            f"Пожалуйста, заполните анкету заново через меню."
+            f"Пожалуйста, заполни визитку заново через меню."
         ),
         parse_mode="Markdown",
         reply_markup=get_main_menu_inline()
