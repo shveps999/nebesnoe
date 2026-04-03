@@ -28,10 +28,6 @@ class BroadcastForm(StatesGroup):
     message = State()
     confirm = State()
 
-# ============================================
-# МОДЕРАЦИЯ АНКЕТ (ваши тексты сохранены)
-# ============================================
-
 @router.message(Command("clear_all"), F.from_user.id == ADMIN_ID)
 async def cmd_clear_all(message: types.Message):
     """Команда для удаления всех опубликованных анкет"""
@@ -159,7 +155,6 @@ async def admin_approve(callback: types.CallbackQuery, bot: Bot):
         reply_markup=get_main_menu_inline(has_profile=True)
     )
     
-    # УДАЛИТЬ сообщение модерации из чата
     try:
         await callback.message.delete()
         logger.info(f"Moderation message {callback.message.message_id} deleted after approval")
@@ -220,7 +215,6 @@ async def admin_send_comment(message: types.Message, state: FSMContext, bot: Bot
         reply_markup=get_main_menu_inline()
     )
     
-    # УДАЛИТЬ сообщение модерации из чата
     try:
         await callback.message.delete()
         logger.info(f"Moderation message {callback.message.message_id} deleted after edit request")
@@ -242,7 +236,7 @@ async def back_to_menu_callback(callback: types.CallbackQuery):
     await callback.answer()
 
 # ============================================
-# РАССЫЛКА УВЕДОМЛЕНИЙ (НОВЫЙ ФУНКЦИОНАЛ)
+# РАССЫЛКА УВЕДОМЛЕНИЙ
 # ============================================
 
 @router.message(Command("broadcast"), F.from_user.id == ADMIN_ID)
@@ -276,7 +270,6 @@ async def broadcast_preview(message: types.Message, state: FSMContext):
     text = message.text
     await state.update_data(broadcast_text=text)
     
-    # Получаем количество пользователей
     all_users = await get_all_user_tg_ids()
     approved_users = await get_approved_user_tg_ids()
     
@@ -318,7 +311,6 @@ async def _send_broadcast(callback: types.CallbackQuery, state: FSMContext, bot:
         await state.clear()
         return
     
-    # Получаем список пользователей
     if approved_only:
         user_ids = await get_approved_user_tg_ids()
         target = "с одобренной анкетой"
@@ -331,12 +323,10 @@ async def _send_broadcast(callback: types.CallbackQuery, state: FSMContext, bot:
         await state.clear()
         return
     
-    # Счётчики
     sent = 0
     failed = 0
     blocked = 0
     
-    # Отправляем каждому пользователю
     for user_id in user_ids:
         try:
             await bot.send_message(
@@ -345,7 +335,7 @@ async def _send_broadcast(callback: types.CallbackQuery, state: FSMContext, bot:
                 parse_mode="Markdown"
             )
             sent += 1
-            await asyncio.sleep(0.05)  # Небольшая задержка чтобы не получить бан
+            await asyncio.sleep(0.05)
         except Exception as e:
             error_str = str(e).lower()
             if "forbidden" in error_str or "blocked" in error_str:
@@ -354,7 +344,6 @@ async def _send_broadcast(callback: types.CallbackQuery, state: FSMContext, bot:
                 failed += 1
             logger.warning(f"Failed to send to {user_id}: {e}")
     
-    # Отчёт админу
     report = (
         f"✅ **Рассылка завершена!**\n\n"
         f"📊 **Статистика:**\n"
