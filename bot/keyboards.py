@@ -74,10 +74,6 @@ def get_confirm_delete_keyboard():
     builder.adjust(2)
     return builder.as_markup()
 
-# ============================================
-# НОВЫЕ КЛАВИАТУРЫ ДЛЯ РАССЫЛКИ
-# ============================================
-
 def get_broadcast_cancel_keyboard():
     """Кнопка отмены рассылки"""
     builder = InlineKeyboardBuilder()
@@ -90,5 +86,12 @@ def get_broadcast_confirm_keyboard():
     builder.button(text="✅ Отправить всем", callback_data="broadcast_confirm")
     builder.button(text="✅ Только с анкетой", callback_data="broadcast_approved_only")
     builder.button(text="❌ Отмена", callback_data="broadcast_cancel")
+    builder.adjust(1)
+    return builder.as_markup()
+
+def get_consent_keyboard():
+    """Кнопка согласия на обработку данных"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="☑️ Согласен", callback_data="consent_agree")
     builder.adjust(1)
     return builder.as_markup()
