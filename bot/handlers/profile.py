@@ -68,9 +68,9 @@ async def add_profile_callback(callback: types.CallbackQuery, state: FSMContext)
     
     if has_profile:
         await callback.message.answer(
-            "ℹ️ **У вас уже есть одобренная анкета**\n\n"
-            "Вы можете просматривать анкеты других участников.\n\n"
-            "Если хотите обновить информацию — используйте **Управление анкетой**.",
+            "ℹ️ **У тебя уже есть одобренная анкета**\n\n"
+            "Просмотр списка участников доступен.\n\n"
+            "Если хочешь обновить информацию — используй **Управление анкетой**.",
             parse_mode="Markdown",
             reply_markup=get_main_menu_inline(has_profile=True)
         )
