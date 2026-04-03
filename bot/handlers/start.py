@@ -138,7 +138,7 @@ async def send_participants_list(message: types.Message, bot: Bot, user_tg_id: i
                 first_msg_id = sent_msg.message_id
     
     final_msg = await message.answer(
-        ".",
+        "Выбери действие:",
         reply_markup=get_refresh_keyboard()
     )
     
