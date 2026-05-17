@@ -22,7 +22,6 @@ def escape_markdown(text: str) -> str:
     """Экранирует специальные символы Markdown для безопасной вставки в текст"""
     if not text:
         return text
-    # Символы, которые нужно экранировать в Markdown
     escape_chars = r'_*[]()~`>#+-=|{}.!'
     return ''.join('\\' + char if char in escape_chars else char for char in text)
 
@@ -324,7 +323,6 @@ async def edit_process_tg_username(message: types.Message, state: FSMContext, bo
     tg_username = format_tg_username(text)
     await state.update_data(tg_username=tg_username)
     
-    # ✅ ЭКРАНИРУЕМ username для безопасного использования в Markdown
     safe_username = escape_markdown(tg_username)
     
     msg = await message.answer(
@@ -376,7 +374,7 @@ async def edit_process_photo_not_photo(message: types.Message, state: FSMContext
     )
     await state.update_data(last_message_id=msg.message_id)
 
-async def finish_edit(message: types.Message, bot: Bot, profile_id: int,  dict, photo_url: str, state: FSMContext):
+async def finish_edit(message: types.Message, bot: Bot, profile_id: int, data: dict, photo_url: str, state: FSMContext):
     """Завершение редактирования и отправка на модерацию"""
     notification_sent = await notify_admin_edit(bot, message.from_user.id, data, photo_url, profile_id)
     
@@ -524,7 +522,6 @@ async def process_tg_username(message: types.Message, state: FSMContext, bot: Bo
     tg_username = format_tg_username(text)
     await state.update_data(tg_username=tg_username)
     
-    # ✅ ЭКРАНИРУЕМ username для безопасного использования в Markdown
     safe_username = escape_markdown(tg_username)
     
     msg = await message.answer(
@@ -586,7 +583,11 @@ async def process_photo_not_photo(message: types.Message, state: FSMContext, bot
     )
     await state.update_data(last_message_id=msg.message_id)
 
-async def notify_admin(bot: Bot, user_id: int,  dict, photo_url: str, profile_id: int) -> bool:
+# ============================================
+# ✅ ИСПРАВЛЕНО: Добавлен параметр 'data: dict'
+# ============================================
+
+async def notify_admin(bot: Bot, user_id: int, data: dict, photo_url: str, profile_id: int) -> bool:
     """Отправить анкету на модерацию в чат. Возвращает True если успешно."""
     tg_username = data.get('tg_username')
     
@@ -652,7 +653,7 @@ async def notify_admin(bot: Bot, user_id: int,  dict, photo_url: str, profile_id
         logger.error(f"Фоллбэк уведомление тоже не отправлено: {e2}")
         return False
 
-async def notify_admin_edit(bot: Bot, user_id: int,  dict, photo_url: str, profile_id: int) -> bool:
+async def notify_admin_edit(bot: Bot, user_id: int, data: dict, photo_url: str, profile_id: int) -> bool:
     """Отправить изменения анкеты на модерацию. Возвращает True если успешно."""
     tg_username = data.get('tg_username')
     
