@@ -1,14 +1,24 @@
 import logging
+import re
 from aiogram import Router, F, types, Bot
 from aiogram.types import URLInputFile
-from bot.keyboards import get_main_menu_inline, get_refresh_keyboard, get_admin_keyboard, get_consent_keyboard
-from bot.database import get_approved_profiles, user_has_approved_profile, get_user_last_message, save_user_message, user_has_consented, save_user_consent
+from bot.keyboards import get_main_menu_inline, get_refresh_keyboard, get_admin_keyboard
+from bot.database import get_approved_profiles, user_has_approved_profile, get_user_last_message, save_user_message
 from bot.config import ADMIN_ID
 
 logger = logging.getLogger(__name__)
 router = Router()
 
-PRIVACY_POLICY_URL = "https://docs.google.com/document/d/1bAcr5y_Ne3oFTOYPK8TXbOe09e-ZyMJhHrb8fpMug0M/edit?usp=sharing"
+# ============================================
+# ФУНКЦИЯ: Экранирование Markdown
+# ============================================
+
+def escape_markdown(text: str) -> str:
+    """Экранирует специальные символы Markdown для безопасной вставки в текст"""
+    if not text:
+        return text
+    escape_chars = r'_*[]()~`>#+-=|{}.!'
+    return ''.join('\\' + char if char in escape_chars else char for char in text)
 
 async def delete_message_safe(bot: Bot, chat_id: int, message_id: int):
     """Безопасное удаление сообщения (игнорирует ошибки)"""
@@ -39,7 +49,7 @@ async def send_main_menu(message: types.Message, bot: Bot, user_tg_id: int, dele
             await delete_message_safe(bot, user_tg_id, last_menu_id)
     
     new_message = await message.answer(
-        "🪩 **Тусовка Небесного**\n\nВыбери действие:",
+        "🏠 **Главное меню**\n\nВыберите действие:",
         parse_mode="Markdown",
         reply_markup=get_main_menu_inline(has_profile)
     )
@@ -47,32 +57,6 @@ async def send_main_menu(message: types.Message, bot: Bot, user_tg_id: int, dele
     await save_user_message(user_tg_id, new_message.message_id)
     logger.info(f"Sent main menu to user {user_tg_id}, message_id={new_message.message_id}")
     return new_message
-
-async def show_consent_flow(message: types.Message, bot: Bot):
-    """Показать поток согласия на обработку данных"""
-    tg_id = message.from_user.id
-    
-    welcome = await message.answer(
-        "Привет! Рады видеть тебя в нашем боте, сейчас все покажем ✨"
-    )
-    
-    consent_text = (
-        "Перед тем, как начать, нам нужно получить твое согласие на обработку персональных данных:\n\n"
-        "🔹 Собираем: имя, сферу деятельности, кого ищете, фото, никнейм в тг\n"
-        "🔹 Удалить анкету: через меню «Управление анкетой» → «Удалить»\n"
-        "🔹 Перед каждым новым ивентом — удаляется автоматически\n\n"
-        f"Нажимая «Согласен», вы принимаете условия [Политики обработки персональных данных]({PRIVACY_POLICY_URL})."
-    )
-    
-    consent_msg = await message.answer(
-        consent_text,
-        parse_mode="Markdown",
-        disable_web_page_preview=True,
-        reply_markup=get_consent_keyboard()
-    )
-    
-    await save_user_message(tg_id, -consent_msg.message_id)
-    logger.info(f"Shown consent flow to user {tg_id}")
 
 async def send_participants_list(message: types.Message, bot: Bot, user_tg_id: int):
     """Отправить список участников, удалив предыдущее меню"""
@@ -103,15 +87,20 @@ async def send_participants_list(message: types.Message, bot: Bot, user_tg_id: i
     
     first_msg_id = None
     
+    # Отправляем анкеты БЕЗ кнопок
     for profile in profiles:
-        tg_line = ""
-        if profile.get('tg_username'):
-            tg_line = f"\n\n🔗 Тг: {profile['tg_username']}"
+        # ✅ ЭКРАНИРУЕМ все поля для безопасного использования в Markdown
+        safe_name = escape_markdown(profile['name'])
+        safe_occupation = escape_markdown(profile['occupation'] or '')
+        safe_looking = escape_markdown(profile['looking'] or '')
+        safe_tg = escape_markdown(profile.get('tg_username')) if profile.get('tg_username') else None
+        
+        tg_line = f"\n\n🔗 Тг: {safe_tg}" if safe_tg else ""
         
         caption = (
-            f"**{profile['name']}**\n\n"
-            f"🪄 Сфера: {profile['occupation']}\n\n"
-            f"💡 Ищу: {profile['looking']}"
+            f"**{safe_name}**\n\n"
+            f"🪄 {safe_occupation}\n\n"
+            f"💡 Ищу: {safe_looking}"
             f"{tg_line}"
         )
         
@@ -137,8 +126,9 @@ async def send_participants_list(message: types.Message, bot: Bot, user_tg_id: i
             if first_msg_id is None:
                 first_msg_id = sent_msg.message_id
     
+    # Кнопки ТОЛЬКО в конце (с минимальным текстом ".")
     final_msg = await message.answer(
-        "Выбери действие:",
+        ".",
         reply_markup=get_refresh_keyboard()
     )
     
