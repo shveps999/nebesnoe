@@ -14,6 +14,22 @@ from aiogram.types import URLInputFile
 logger = logging.getLogger(__name__)
 router = Router()
 
+# ============================================
+# НОВАЯ ФУНКЦИЯ: Экранирование Markdown
+# ============================================
+
+def escape_markdown(text: str) -> str:
+    """Экранирует специальные символы Markdown для безопасной вставки в текст"""
+    if not text:
+        return text
+    # Символы, которые нужно экранировать в Markdown
+    escape_chars = r'_*[]()~`>#+-=|{}.!'
+    return ''.join('\\' + char if char in escape_chars else char for char in text)
+
+# ============================================
+# ФОРМЫ
+# ============================================
+
 class ProfileForm(StatesGroup):
     name = State()
     occupation = State()
@@ -308,8 +324,11 @@ async def edit_process_tg_username(message: types.Message, state: FSMContext, bo
     tg_username = format_tg_username(text)
     await state.update_data(tg_username=tg_username)
     
+    # ✅ ЭКРАНИРУЕМ username для безопасного использования в Markdown
+    safe_username = escape_markdown(tg_username)
+    
     msg = await message.answer(
-        f"💫 Принято: **{tg_username}**\n\n"
+        f"💫 Принято: **{safe_username}**\n\n"
         "📸 **Теперь отправь свое фото, чтобы тебя могли узнать на ивенте**\n\n",
         parse_mode="Markdown",
         reply_markup=get_cancel_keyboard()
@@ -505,8 +524,11 @@ async def process_tg_username(message: types.Message, state: FSMContext, bot: Bo
     tg_username = format_tg_username(text)
     await state.update_data(tg_username=tg_username)
     
+    # ✅ ЭКРАНИРУЕМ username для безопасного использования в Markdown
+    safe_username = escape_markdown(tg_username)
+    
     msg = await message.answer(
-        f"⚡️ Принято: **{tg_username}**\n\n"
+        f"⚡️ Принято: **{safe_username}**\n\n"
         "📸 **Теперь отправь свое фото, чтобы тебя могли узнать на ивенте**\n\n",
         parse_mode="Markdown",
         reply_markup=get_cancel_keyboard()
