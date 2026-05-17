@@ -1,12 +1,15 @@
 import logging
 from aiogram import Router, F, types, Bot
 from aiogram.types import URLInputFile
-from bot.keyboards import get_main_menu_inline, get_refresh_keyboard, get_admin_keyboard
+from bot.keyboards import get_main_menu_inline, get_refresh_keyboard, get_admin_keyboard, get_consent_keyboard
 from bot.database import get_approved_profiles, user_has_approved_profile, get_user_last_message, save_user_message, user_has_consented, save_user_consent
 from bot.config import ADMIN_ID
 
 logger = logging.getLogger(__name__)
 router = Router()
+
+# Ссылка на политику конфиденциальности
+PRIVACY_POLICY_URL = "https://docs.google.com/document/d/1bAcr5y_Ne3oFTOYPK8TXbOe09e-ZyMJhHrb8fpMug0M/edit?usp=sharing"
 
 async def delete_message_safe(bot: Bot, chat_id: int, message_id: int):
     """Безопасное удаление сообщения (игнорирует ошибки)"""
@@ -26,6 +29,35 @@ async def _delete_participant_list(bot: Bot, user_tg_id: int):
         for offset in range(1, 30):
             await delete_message_safe(bot, user_tg_id, last_list_msg_id - offset)
         logger.debug(f"Deleted participant list for user {user_tg_id}")
+
+async def show_consent_flow(message: types.Message, bot: Bot):
+    """Показать поток согласия на обработку данных"""
+    tg_id = message.from_user.id
+    
+    # 1. Приветственное сообщение
+    await message.answer(
+        "Привет! Рады видеть тебя в нашем боте, сейчас все покажем ✨"
+    )
+    
+    # 2. Сообщение с согласием (без превью ссылки)
+    consent_text = (
+        "Перед тем, как начать, нам нужно получить твое согласие на обработку персональных данных:\n\n"
+        "🔹 Собираем: имя, сферу деятельности, кого ищете, фото, никнейм в тг\n"
+        "🔹 Удалить анкету: через меню «Управление анкетой» → «Удалить анкету»\n"
+        "🔹 Перед каждым новым ивентом — удаляется автоматически\n\n"
+        f"Нажимая «Я согласен», вы принимаете условия [Политики обработки персональных данных]({PRIVACY_POLICY_URL})."
+    )
+    
+    consent_msg = await message.answer(
+        consent_text,
+        parse_mode="Markdown",
+        disable_web_page_preview=True,
+        reply_markup=get_consent_keyboard()
+    )
+    
+    # Сохраняем ID сообщения согласия для последующего удаления (отрицательное = согласие)
+    await save_user_message(tg_id, -consent_msg.message_id)
+    logger.info(f"Shown consent flow to user {tg_id}")
 
 async def send_main_menu(message: types.Message, bot: Bot, user_tg_id: int, delete_old: bool = True):
     """Отправить главное меню, удалив предыдущее"""
@@ -186,12 +218,14 @@ async def consent_agree_callback(callback: types.CallbackQuery, bot: Bot):
     
     await save_user_consent(user_tg_id)
     
+    # Удаляем сообщения согласия
     saved_id = await get_user_last_message(user_tg_id)
     if saved_id and saved_id < 0:
         consent_msg_id = abs(saved_id)
         await delete_message_safe(bot, user_tg_id, consent_msg_id)
         await delete_message_safe(bot, user_tg_id, consent_msg_id - 1)
     
+    # Показываем главное меню
     await send_main_menu(callback.message, bot, user_tg_id, delete_old=False)
     await callback.answer()
     logger.info(f"User {user_tg_id} gave consent to data processing")
