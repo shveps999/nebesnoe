@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 # ============================================
-# НОВАЯ ФУНКЦИЯ: Экранирование Markdown
+# ФУНКЦИЯ: Экранирование Markdown
 # ============================================
 
 def escape_markdown(text: str) -> str:
@@ -586,18 +586,25 @@ async def process_photo_not_photo(message: types.Message, state: FSMContext, bot
     )
     await state.update_data(last_message_id=msg.message_id)
 
-async def notify_admin(bot: Bot, user_id: int, data: dict, photo_url: str, profile_id: int) -> bool:
+async def notify_admin(bot: Bot, user_id: int,  dict, photo_url: str, profile_id: int) -> bool:
     """Отправить анкету на модерацию в чат. Возвращает True если успешно."""
     tg_username = data.get('tg_username')
-    tg_line = f"\n🔗 Тг: {tg_username}" if tg_username else ""
+    
+    # ✅ ЭКРАНИРУЕМ все поля для безопасного использования в Markdown
+    safe_name = escape_markdown(data['name'])
+    safe_occupation = escape_markdown(data['occupation'])
+    safe_looking = escape_markdown(data['looking'])
+    safe_tg = escape_markdown(tg_username) if tg_username else None
+    
+    tg_line = f"\n🔗 Тг: {safe_tg}" if safe_tg else ""
     
     text = (
         f"🔔 **Новая анкета на модерацию!**\n\n"
         f"👤 **ID:** {profile_id}\n"
         f"🆔 **Пользователь:** {user_id}\n"
-        f"📛 **Имя:** {data['name']}\n"
-        f"💼 **Занятие:** {data['occupation']}\n"
-        f"🔍 **Ищет:** {data['looking']}"
+        f"📛 **Имя:** {safe_name}\n"
+        f"💼 **Занятие:** {safe_occupation}\n"
+        f"🔍 **Ищет:** {safe_looking}"
         f"{tg_line}\n\n"
         f"⏳ **Статус:** На модерации"
     )
@@ -648,15 +655,22 @@ async def notify_admin(bot: Bot, user_id: int, data: dict, photo_url: str, profi
 async def notify_admin_edit(bot: Bot, user_id: int,  dict, photo_url: str, profile_id: int) -> bool:
     """Отправить изменения анкеты на модерацию. Возвращает True если успешно."""
     tg_username = data.get('tg_username')
-    tg_line = f"\n🔗 Тг: {tg_username}" if tg_username else ""
+    
+    # ✅ ЭКРАНИРУЕМ все поля для безопасного использования в Markdown
+    safe_name = escape_markdown(data['name'])
+    safe_occupation = escape_markdown(data['occupation'])
+    safe_looking = escape_markdown(data['looking'])
+    safe_tg = escape_markdown(tg_username) if tg_username else None
+    
+    tg_line = f"\n🔗 Тг: {safe_tg}" if safe_tg else ""
     
     text = (
         f"✏️ **Изменения анкеты на модерацию!**\n\n"
         f"👤 **ID:** {profile_id}\n"
         f"🆔 **Пользователь:** {user_id}\n"
-        f"📛 **Имя:** {data['name']}\n"
-        f"💼 **Занятие:** {data['occupation']}\n"
-        f"🔍 **Ищет:** {data['looking']}"
+        f"📛 **Имя:** {safe_name}\n"
+        f"💼 **Занятие:** {safe_occupation}\n"
+        f"🔍 **Ищет:** {safe_looking}"
         f"{tg_line}\n\n"
         f"⏳ **Статус:** На модерации"
     )
