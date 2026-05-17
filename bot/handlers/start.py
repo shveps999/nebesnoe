@@ -1,24 +1,12 @@
 import logging
-import re
 from aiogram import Router, F, types, Bot
 from aiogram.types import URLInputFile
 from bot.keyboards import get_main_menu_inline, get_refresh_keyboard, get_admin_keyboard
-from bot.database import get_approved_profiles, user_has_approved_profile, get_user_last_message, save_user_message
+from bot.database import get_approved_profiles, user_has_approved_profile, get_user_last_message, save_user_message, user_has_consented, save_user_consent
 from bot.config import ADMIN_ID
 
 logger = logging.getLogger(__name__)
 router = Router()
-
-# ============================================
-# ФУНКЦИЯ: Экранирование Markdown
-# ============================================
-
-def escape_markdown(text: str) -> str:
-    """Экранирует специальные символы Markdown для безопасной вставки в текст"""
-    if not text:
-        return text
-    escape_chars = r'_*[]()~`>#+-=|{}.!'
-    return ''.join('\\' + char if char in escape_chars else char for char in text)
 
 async def delete_message_safe(bot: Bot, chat_id: int, message_id: int):
     """Безопасное удаление сообщения (игнорирует ошибки)"""
@@ -48,6 +36,7 @@ async def send_main_menu(message: types.Message, bot: Bot, user_tg_id: int, dele
         if last_menu_id and last_menu_id > 0:
             await delete_message_safe(bot, user_tg_id, last_menu_id)
     
+    # ✅ Главное меню использует Markdown (контролируемый текст)
     new_message = await message.answer(
         "🏠 **Главное меню**\n\nВыберите действие:",
         parse_mode="Markdown",
@@ -89,32 +78,28 @@ async def send_participants_list(message: types.Message, bot: Bot, user_tg_id: i
     
     # Отправляем анкеты БЕЗ кнопок
     for profile in profiles:
-        # ✅ ЭКРАНИРУЕМ все поля для безопасного использования в Markdown
-        safe_name = escape_markdown(profile['name'])
-        safe_occupation = escape_markdown(profile['occupation'] or '')
-        safe_looking = escape_markdown(profile['looking'] or '')
-        safe_tg = escape_markdown(profile.get('tg_username')) if profile.get('tg_username') else None
-        
-        tg_line = f"\n\n🔗 Тг: {safe_tg}" if safe_tg else ""
+        # ✅ ПРОСТОЙ ТЕКСТ БЕЗ MARKDOWN — никаких ошибок парсинга
+        tg_line = f"\n\n🔗 Тг: {profile.get('tg_username')}" if profile.get('tg_username') else ""
         
         caption = (
-            f"**{safe_name}**\n\n"
-            f"🪄 {safe_occupation}\n\n"
-            f"💡 Ищу: {safe_looking}"
+            f"{profile['name']}\n\n"
+            f"🪄 {profile['occupation'] or ''}\n\n"
+            f"💡 Ищу: {profile['looking'] or ''}"
             f"{tg_line}"
         )
         
         try:
             if profile['photo_url']:
+                # ✅ parse_mode=None — отключаем парсинг для пользовательских данных
                 sent_msg = await message.answer_photo(
                     photo=URLInputFile(profile['photo_url']),
                     caption=caption,
-                    parse_mode="Markdown"
+                    parse_mode=None
                 )
             else:
                 sent_msg = await message.answer(
                     caption,
-                    parse_mode="Markdown"
+                    parse_mode=None
                 )
             
             if first_msg_id is None:
@@ -122,7 +107,7 @@ async def send_participants_list(message: types.Message, bot: Bot, user_tg_id: i
                 
         except Exception as e:
             logger.error(f"Ошибка отправки фото: {e}")
-            sent_msg = await message.answer(caption, parse_mode="Markdown")
+            sent_msg = await message.answer(caption, parse_mode=None)
             if first_msg_id is None:
                 first_msg_id = sent_msg.message_id
     
@@ -137,6 +122,7 @@ async def send_participants_list(message: types.Message, bot: Bot, user_tg_id: i
     if message.from_user.id == ADMIN_ID:
         await message.answer(
             "🔧 **Админ-панель:**",
+            parse_mode="Markdown",
             reply_markup=get_admin_keyboard()
         )
     
