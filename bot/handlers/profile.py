@@ -22,8 +22,8 @@ def escape_markdown(text: str) -> str:
     """Экранирует специальные символы Markdown для безопасной вставки в текст"""
     if not text:
         return text
-    escape_chars = r'_*[]()~`>#+-=|{}.!'
-    return ''.join('\\' + char if char in escape_chars else char for char in text)
+    escape_chars = r'_*~`>#+-=|{}.!'
+    return ''.join('' + char if char in escape_chars else char for char in text)
 
 # ============================================
 # ФОРМЫ
@@ -107,7 +107,7 @@ def validate_portfolio_url(text: str) -> bool:
     if not text or len(text) > 300:
         return False
     # пробелы и символы, которые ломают разметку Telegram
-    if re.search(r'[\s()<>\[\]`*\\]', text):
+    if re.search(r'[\s()<>\[\]`*]', text):
         return False
     return bool(re.match(r'^https?://[^\s/?#]+\.[^\s/?#]{2,}\S*$', text, flags=re.IGNORECASE))
 
@@ -115,8 +115,8 @@ def validate_portfolio_url(text: str) -> bool:
 def get_works_line(data: dict) -> str:
     """Строка со ссылкой на работы для сообщений модерации (parse_mode=Markdown)"""
     portfolio_url = data.get('portfolio_url')
-    # ВАЖНО: ссылку НЕ экранируем — она вставляется как [текст](url)
-    return f"\n🎨 Работы: [ссылка]({portfolio_url})" if portfolio_url else ""
+    # ВАЖНО: ссылку НЕ экранируем — она вставляется как текст
+    return f"\n🎨 Работы: ссылка" if portfolio_url else ""
 
 # ============================================
 # ХЕНДЛЕРЫ
@@ -468,7 +468,8 @@ async def edit_process_photo(message: types.Message, state: FSMContext, bot: Bot
         data['looking'],
         data.get('tg_username'),
         photo_url,
-        data.get('portfolio_url')
+        data.get('portfolio_url'),
+        photo_file_id=photo_id      # ✅ кэш фото Telegram
     )
     await finish_edit(message, bot, profile_id, data, photo_url, state)
 
@@ -681,7 +682,7 @@ async def process_portfolio(message: types.Message, state: FSMContext, bot: Bot)
     await state.update_data(portfolio_url=url)
     
     msg = await message.answer(
-        f"💫 Принято: [ссылка на работы]({url})\n\n" + PHOTO_PROMPT,
+        f"💫 Принято: ссылка на работы\n\n" + PHOTO_PROMPT,
         parse_mode="Markdown",
         reply_markup=get_cancel_keyboard()
     )
@@ -727,7 +728,8 @@ async def process_photo(message: types.Message, state: FSMContext, bot: Bot):
         looking=data['looking'],
         tg_username=data.get('tg_username'),
         photo_url=photo_url,
-        portfolio_url=data.get('portfolio_url')      # ✅ НОВОЕ
+        portfolio_url=data.get('portfolio_url'),     # ✅ НОВОЕ
+        photo_file_id=photo_id      # ✅ кэш фото Telegram
     )
     
     await message.answer(
