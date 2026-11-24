@@ -34,6 +34,7 @@ class ProfileForm(StatesGroup):
     occupation = State()
     looking = State()
     tg_username = State()
+    portfolio = State()      # ✅ НОВОЕ: ссылка на работы
     photo = State()
 
 class EditForm(StatesGroup):
@@ -42,6 +43,7 @@ class EditForm(StatesGroup):
     occupation = State()
     looking = State()
     tg_username = State()
+    portfolio = State()      # ✅ НОВОЕ: ссылка на работы
     photo = State()
 
 async def delete_message_safe(bot: Bot, chat_id: int, message_id: int):
@@ -69,6 +71,56 @@ def format_tg_username(text: str) -> str:
     if not text.startswith('@'):
         return '@' + text
     return text
+
+# ============================================
+# ✅ НОВОЕ: ССЫЛКА НА РАБОТЫ (необязательное поле)
+# ============================================
+
+PORTFOLIO_PROMPT = (
+    "🎨 **Ссылка на твои работы**\n\n"
+    "Отправь ссылку, где можно посмотреть твои работы: Behance, Instagram, сайт, канал — что угодно.\n\n"
+    "💡 Или нажми **/skip** чтобы пропустить:"
+)
+
+EDIT_PORTFOLIO_PROMPT = (
+    "🎨 **Ссылка на твои работы**\n\n"
+    "Отправь ссылку, где можно посмотреть твои работы "
+    "(или напиши «оставить», чтобы не менять).\n\n"
+    "💡 Или нажми **/skip**, чтобы убрать ссылку из анкеты:"
+)
+
+PHOTO_PROMPT = "📸 **Теперь отправь свое фото, чтобы тебя могли узнать на ивенте**\n\n"
+
+
+def normalize_portfolio_url(text: str):
+    """Подставляет https:// если ссылку ввели без схемы. /skip -> None"""
+    text = text.strip()
+    if text.lower() in ('skip', '/skip'):
+        return None
+    if not re.match(r'^https?://', text, flags=re.IGNORECASE):
+        text = 'https://' + text
+    return text
+
+
+def validate_portfolio_url(text: str) -> bool:
+    """Проверяет уже нормализованную ссылку"""
+    if not text or len(text) > 300:
+        return False
+    # пробелы и символы, которые ломают разметку Telegram
+    if re.search(r'[\s()<>\[\]`*\\]', text):
+        return False
+    return bool(re.match(r'^https?://[^\s/?#]+\.[^\s/?#]{2,}\S*$', text, flags=re.IGNORECASE))
+
+
+def get_works_line(data: dict) -> str:
+    """Строка со ссылкой на работы для сообщений модерации (parse_mode=Markdown)"""
+    portfolio_url = data.get('portfolio_url')
+    # ВАЖНО: ссылку НЕ экранируем — она вставляется как [текст](url)
+    return f"\n🎨 Работы: [ссылка]({portfolio_url})" if portfolio_url else ""
+
+# ============================================
+# ХЕНДЛЕРЫ
+# ============================================
 
 @router.callback_query(F.data == "add_profile")
 async def add_profile_callback(callback: types.CallbackQuery, state: FSMContext):
@@ -293,16 +345,14 @@ async def edit_process_tg_username(message: types.Message, state: FSMContext, bo
     text = message.text.strip()
     
     if text.lower() == 'skip' or text == '/skip':
-        tg_username = None
+        await state.update_data(tg_username=None)
         msg = await message.answer(
-            "🕯 Пропущено.\n\n"
-            "📸 **Теперь отправь свое фото, чтобы тебя могли узнать на ивенте**\n\n",
+            "🕯 Пропущено.\n\n" + EDIT_PORTFOLIO_PROMPT,   # ✅ НОВОЕ: идём к ссылке на работы
             parse_mode="Markdown",
             reply_markup=get_cancel_keyboard()
         )
         await state.update_data(last_message_id=msg.message_id)
-        await state.update_data(tg_username=None)
-        await state.set_state(EditForm.photo)
+        await state.set_state(EditForm.portfolio)
         return
     
     if not validate_tg_username(text):
@@ -326,13 +376,67 @@ async def edit_process_tg_username(message: types.Message, state: FSMContext, bo
     safe_username = escape_markdown(tg_username)
     
     msg = await message.answer(
-        f"💫 Принято: **{safe_username}**\n\n"
-        "📸 **Теперь отправь свое фото, чтобы тебя могли узнать на ивенте**\n\n",
+        f"💫 Принято: **{safe_username}**\n\n" + EDIT_PORTFOLIO_PROMPT,   # ✅ НОВОЕ
+        parse_mode="Markdown",
+        reply_markup=get_cancel_keyboard()
+    )
+    await state.update_data(last_message_id=msg.message_id)
+    await state.set_state(EditForm.portfolio)
+
+# ✅ НОВОЕ: шаг «ссылка на работы» при редактировании
+@router.message(EditForm.portfolio, F.text)
+async def edit_process_portfolio(message: types.Message, state: FSMContext, bot: Bot):
+    data = await state.get_data()
+    last_msg_id = data.get('last_message_id')
+    if last_msg_id:
+        await delete_message_safe(bot, message.from_user.id, last_msg_id)
+    
+    text = message.text.strip()
+    
+    if text.lower() == 'оставить':
+        profile = await get_profile_by_tg_id(message.from_user.id)
+        url = profile.get('portfolio_url') if profile else None
+    elif text.lower() in ('skip', '/skip'):
+        url = None
+    else:
+        url = normalize_portfolio_url(text)
+        if not validate_portfolio_url(url):
+            msg = await message.answer(
+                "❌ **Не похоже на ссылку**\n\n"
+                "Пришли одну ссылку без пробелов, например:\n"
+                "**https://behance.net/username**\n\n"
+                "Попробуй еще раз, напиши «оставить» или **/skip**:",
+                parse_mode="Markdown",
+                reply_markup=get_cancel_keyboard()
+            )
+            await state.update_data(last_message_id=msg.message_id)
+            return
+    
+    await state.update_data(portfolio_url=url)
+    
+    msg = await message.answer(
+        "💫 Принято.\n\n" + PHOTO_PROMPT,
         parse_mode="Markdown",
         reply_markup=get_cancel_keyboard()
     )
     await state.update_data(last_message_id=msg.message_id)
     await state.set_state(EditForm.photo)
+
+# ✅ НОВОЕ: если на шаге ссылки прислали не текст
+@router.message(EditForm.portfolio)
+async def edit_process_portfolio_not_text(message: types.Message, state: FSMContext, bot: Bot):
+    data = await state.get_data()
+    last_msg_id = data.get('last_message_id')
+    if last_msg_id:
+        await delete_message_safe(bot, message.from_user.id, last_msg_id)
+    
+    msg = await message.answer(
+        "🔗 Пришли, пожалуйста, **ссылку текстом**, напиши «оставить» или нажми **/skip**.\n\n"
+        "Фото нужно будет отправить на следующем шаге.",
+        parse_mode="Markdown",
+        reply_markup=get_cancel_keyboard()
+    )
+    await state.update_data(last_message_id=msg.message_id)
 
 @router.message(EditForm.photo, F.photo)
 async def edit_process_photo(message: types.Message, state: FSMContext, bot: Bot):
@@ -356,7 +460,16 @@ async def edit_process_photo(message: types.Message, state: FSMContext, bot: Bot
         await state.update_data(last_message_id=msg.message_id)
         return
     
-    await update_profile(profile_id, data['name'], data['occupation'], data['looking'], data.get('tg_username'), photo_url)
+    # ✅ НОВОЕ: передаём portfolio_url
+    await update_profile(
+        profile_id,
+        data['name'],
+        data['occupation'],
+        data['looking'],
+        data.get('tg_username'),
+        photo_url,
+        data.get('portfolio_url')
+    )
     await finish_edit(message, bot, profile_id, data, photo_url, state)
 
 @router.message(EditForm.photo, ~F.photo)
@@ -492,16 +605,14 @@ async def process_tg_username(message: types.Message, state: FSMContext, bot: Bo
     text = message.text.strip()
     
     if text.lower() == 'skip' or text == '/skip':
-        tg_username = None
+        await state.update_data(tg_username=None)
         msg = await message.answer(
-            "🚨 Пропущено.\n\n"
-            "📸 **Теперь отправь свое фото, чтобы тебя могли узнать на ивенте**\n\n",
+            "🚨 Пропущено.\n\n" + PORTFOLIO_PROMPT,   # ✅ НОВОЕ: идём к ссылке на работы
             parse_mode="Markdown",
             reply_markup=get_cancel_keyboard()
         )
         await state.update_data(last_message_id=msg.message_id)
-        await state.update_data(tg_username=None)
-        await state.set_state(ProfileForm.photo)
+        await state.set_state(ProfileForm.portfolio)
         return
     
     if not validate_tg_username(text):
@@ -525,13 +636,73 @@ async def process_tg_username(message: types.Message, state: FSMContext, bot: Bo
     safe_username = escape_markdown(tg_username)
     
     msg = await message.answer(
-        f"⚡️ Принято: **{safe_username}**\n\n"
-        "📸 **Теперь отправь свое фото, чтобы тебя могли узнать на ивенте**\n\n",
+        f"⚡️ Принято: **{safe_username}**\n\n" + PORTFOLIO_PROMPT,   # ✅ НОВОЕ
+        parse_mode="Markdown",
+        reply_markup=get_cancel_keyboard()
+    )
+    await state.update_data(last_message_id=msg.message_id)
+    await state.set_state(ProfileForm.portfolio)
+
+# ✅ НОВОЕ: шаг «ссылка на работы» при заполнении анкеты
+@router.message(ProfileForm.portfolio, F.text)
+async def process_portfolio(message: types.Message, state: FSMContext, bot: Bot):
+    data = await state.get_data()
+    last_msg_id = data.get('last_message_id')
+    if last_msg_id:
+        await delete_message_safe(bot, message.from_user.id, last_msg_id)
+    
+    text = message.text.strip()
+    
+    if text.lower() in ('skip', '/skip'):
+        await state.update_data(portfolio_url=None)
+        msg = await message.answer(
+            "🕯 Пропущено.\n\n" + PHOTO_PROMPT,
+            parse_mode="Markdown",
+            reply_markup=get_cancel_keyboard()
+        )
+        await state.update_data(last_message_id=msg.message_id)
+        await state.set_state(ProfileForm.photo)
+        return
+    
+    url = normalize_portfolio_url(text)
+    
+    if not validate_portfolio_url(url):
+        msg = await message.answer(
+            "❌ **Не похоже на ссылку**\n\n"
+            "Пришли одну ссылку без пробелов, например:\n"
+            "**https://behance.net/username**\n\n"
+            "Попробуй еще раз или напиши **/skip**:",
+            parse_mode="Markdown",
+            reply_markup=get_cancel_keyboard()
+        )
+        await state.update_data(last_message_id=msg.message_id)
+        return
+    
+    await state.update_data(portfolio_url=url)
+    
+    msg = await message.answer(
+        f"💫 Принято: [ссылка на работы]({url})\n\n" + PHOTO_PROMPT,
         parse_mode="Markdown",
         reply_markup=get_cancel_keyboard()
     )
     await state.update_data(last_message_id=msg.message_id)
     await state.set_state(ProfileForm.photo)
+
+# ✅ НОВОЕ: если на шаге ссылки прислали не текст
+@router.message(ProfileForm.portfolio)
+async def process_portfolio_not_text(message: types.Message, state: FSMContext, bot: Bot):
+    data = await state.get_data()
+    last_msg_id = data.get('last_message_id')
+    if last_msg_id:
+        await delete_message_safe(bot, message.from_user.id, last_msg_id)
+    
+    msg = await message.answer(
+        "🔗 Пришли, пожалуйста, **ссылку текстом** или нажми **/skip**.\n\n"
+        "Фото нужно будет отправить на следующем шаге.",
+        parse_mode="Markdown",
+        reply_markup=get_cancel_keyboard()
+    )
+    await state.update_data(last_message_id=msg.message_id)
 
 @router.message(ProfileForm.photo, F.photo)
 async def process_photo(message: types.Message, state: FSMContext, bot: Bot):
@@ -555,7 +726,8 @@ async def process_photo(message: types.Message, state: FSMContext, bot: Bot):
         occupation=data['occupation'],
         looking=data['looking'],
         tg_username=data.get('tg_username'),
-        photo_url=photo_url
+        photo_url=photo_url,
+        portfolio_url=data.get('portfolio_url')      # ✅ НОВОЕ
     )
     
     await message.answer(
@@ -584,12 +756,12 @@ async def process_photo_not_photo(message: types.Message, state: FSMContext, bot
     await state.update_data(last_message_id=msg.message_id)
 
 # ============================================
-# ✅ ИСПРАВЛЕНО: Добавлен параметр 'data: dict'
+# УВЕДОМЛЕНИЯ МОДЕРАЦИИ
 # ============================================
 
 async def notify_admin(bot: Bot, user_id: int, data: dict, photo_url: str, profile_id: int) -> bool:
     """Отправить анкету на модерацию в чат. Возвращает True если успешно."""
-    tg_username = data.get('tg_username')
+    tg_username = data.get('portfolio_url') if False else data.get('tg_username')
     
     # ✅ ЭКРАНИРУЕМ все поля для безопасного использования в Markdown
     safe_name = escape_markdown(data['name'])
@@ -598,6 +770,7 @@ async def notify_admin(bot: Bot, user_id: int, data: dict, photo_url: str, profi
     safe_tg = escape_markdown(tg_username) if tg_username else None
     
     tg_line = f"\n🔗 Тг: {safe_tg}" if safe_tg else ""
+    works_line = get_works_line(data)      # ✅ НОВОЕ: ссылка на работы (без экранирования)
     
     text = (
         f"🔔 **Новая анкета на модерацию!**\n\n"
@@ -606,7 +779,7 @@ async def notify_admin(bot: Bot, user_id: int, data: dict, photo_url: str, profi
         f"📛 **Имя:** {safe_name}\n"
         f"💼 **Занятие:** {safe_occupation}\n"
         f"🔍 **Ищет:** {safe_looking}"
-        f"{tg_line}\n\n"
+        f"{tg_line}{works_line}\n\n"
         f"⏳ **Статус:** На модерации"
     )
     
@@ -664,6 +837,7 @@ async def notify_admin_edit(bot: Bot, user_id: int, data: dict, photo_url: str, 
     safe_tg = escape_markdown(tg_username) if tg_username else None
     
     tg_line = f"\n🔗 Тг: {safe_tg}" if safe_tg else ""
+    works_line = get_works_line(data)      # ✅ НОВОЕ: ссылка на работы (без экранирования)
     
     text = (
         f"✏️ **Изменения анкеты на модерацию!**\n\n"
@@ -672,7 +846,7 @@ async def notify_admin_edit(bot: Bot, user_id: int, data: dict, photo_url: str, 
         f"📛 **Имя:** {safe_name}\n"
         f"💼 **Занятие:** {safe_occupation}\n"
         f"🔍 **Ищет:** {safe_looking}"
-        f"{tg_line}\n\n"
+        f"{tg_line}{works_line}\n\n"
         f"⏳ **Статус:** На модерации"
     )
     
