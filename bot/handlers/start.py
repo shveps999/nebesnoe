@@ -42,7 +42,7 @@ async def show_consent_flow(message: types.Message, bot: Bot):
     # 2. Сообщение с согласием (без превью ссылки)
     consent_text = (
         "Перед тем, как начать, нам нужно получить твое согласие на обработку персональных данных:\n\n"
-        "🔹 Собираем: имя, сферу деятельности, кого ищете, фото, никнейм в тг\n"
+        "🔹 Собираем: имя, сферу деятельности, кого ищете, фото, никнейм в тг, ссылку на работы (по желанию)\n"  # ✅ НОВОЕ
         "🔹 Удалить анкету: через меню «Управление анкетой» → «Удалить анкету»\n"
         "🔹 Перед каждым новым ивентом — удаляется автоматически\n\n"
         f"Нажимая «Я согласен», вы принимаете условия [Политики обработки персональных данных]({PRIVACY_POLICY_URL})."
@@ -112,12 +112,15 @@ async def send_participants_list(message: types.Message, bot: Bot, user_tg_id: i
     for profile in profiles:
         # ✅ ПРОСТОЙ ТЕКСТ БЕЗ MARKDOWN — никаких ошибок парсинга
         tg_line = f"\n\n🔗 Тг: {profile.get('tg_username')}" if profile.get('tg_username') else ""
+        # ✅ НОВОЕ: ссылка на работы (Telegram сам делает её кликабельной)
+        works_line = f"\n\n🎨 Работы: {profile.get('portfolio_url')}" if profile.get('portfolio_url') else ""
         
         caption = (
             f"{profile['name']}\n\n"
             f"🪄 {profile['occupation'] or ''}\n\n"
             f"💡 Ищу: {profile['looking'] or ''}"
             f"{tg_line}"
+            f"{works_line}"
         )
         
         try:
@@ -131,7 +134,8 @@ async def send_participants_list(message: types.Message, bot: Bot, user_tg_id: i
             else:
                 sent_msg = await message.answer(
                     caption,
-                    parse_mode=None
+                    parse_mode=None,
+                    disable_web_page_preview=True      # ✅ НОВОЕ: без превью сайта
                 )
             
             if first_msg_id is None:
@@ -139,7 +143,7 @@ async def send_participants_list(message: types.Message, bot: Bot, user_tg_id: i
                 
         except Exception as e:
             logger.error(f"Ошибка отправки фото: {e}")
-            sent_msg = await message.answer(caption, parse_mode=None)
+            sent_msg = await message.answer(caption, parse_mode=None, disable_web_page_preview=True)
             if first_msg_id is None:
                 first_msg_id = sent_msg.message_id
     
