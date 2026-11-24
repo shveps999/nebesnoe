@@ -31,6 +31,7 @@ async def init_db():
                 occupation TEXT,
                 looking TEXT,
                 tg_username VARCHAR(100),
+                portfolio_url TEXT,
                 photo_url TEXT,
                 status VARCHAR(50) DEFAULT 'pending',
                 admin_comment TEXT,
@@ -45,31 +46,41 @@ async def init_db():
         except:
             pass  # Колонка уже существует
         
+        # ✅ НОВОЕ: добавляем колонку portfolio_url если её нет
+        try:
+            await cursor.execute("ALTER TABLE profiles ADD COLUMN portfolio_url TEXT AFTER tg_username")
+        except:
+            pass  # Колонка уже существует
+        
         await conn.commit()
     conn.close()
     
     # Инициализировать таблицу согласий
     await init_consents_table()
 
-async def add_profile(tg_id, name, occupation, looking, tg_username, photo_url):
+# ✅ НОВОЕ: параметр portfolio_url добавлен в конец со значением по умолчанию
+async def add_profile(tg_id, name, occupation, looking, tg_username, photo_url, portfolio_url=None):
     conn = await get_connection()
     async with conn.cursor() as cursor:
         await cursor.execute("DELETE FROM profiles WHERE tg_id = %s", (tg_id,))
         await cursor.execute(
-            "INSERT INTO profiles (tg_id, name, occupation, looking, tg_username, photo_url, status) VALUES (%s, %s, %s, %s, %s, %s, 'pending')",
-            (tg_id, name, occupation, looking, tg_username, photo_url)
+            "INSERT INTO profiles (tg_id, name, occupation, looking, tg_username, portfolio_url, photo_url, status) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, 'pending')",
+            (tg_id, name, occupation, looking, tg_username, portfolio_url, photo_url)
         )
         await conn.commit()
         profile_id = cursor.lastrowid
     conn.close()
     return profile_id
 
-async def update_profile(profile_id, name, occupation, looking, tg_username, photo_url):
+# ✅ НОВОЕ: параметр portfolio_url добавлен в конец со значением по умолчанию
+async def update_profile(profile_id, name, occupation, looking, tg_username, photo_url, portfolio_url=None):
     conn = await get_connection()
     async with conn.cursor() as cursor:
         await cursor.execute(
-            "UPDATE profiles SET name = %s, occupation = %s, looking = %s, tg_username = %s, photo_url = %s, status = 'pending' WHERE id = %s",
-            (name, occupation, looking, tg_username, photo_url, profile_id)
+            "UPDATE profiles SET name = %s, occupation = %s, looking = %s, tg_username = %s, "
+            "portfolio_url = %s, photo_url = %s, status = 'pending' WHERE id = %s",
+            (name, occupation, looking, tg_username, portfolio_url, photo_url, profile_id)
         )
         await conn.commit()
     conn.close()
