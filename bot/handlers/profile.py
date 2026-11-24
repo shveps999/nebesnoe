@@ -19,11 +19,16 @@ router = Router()
 # ============================================
 
 def escape_markdown(text: str) -> str:
-    """Экранирует специальные символы Markdown для безопасной вставки в текст"""
+    """Экранирует спецсимволы legacy Markdown (parse_mode='Markdown').
+
+    Ломают парсинг: бэкслеш, _ * [ и обратная кавычка.
+    chr(92) — это бэкслеш; используем chr(), чтобы он не терялся при копировании.
+    """
     if not text:
         return text
-    escape_chars = r'_*~`>#+-=|{}.!'
-    return ''.join('' + char if char in escape_chars else char for char in text)
+    escape_chars = r'\_*[`'
+    backslash = chr(92)
+    return ''.join(backslash + char if char in escape_chars else char for char in text)
 
 # ============================================
 # ФОРМЫ
@@ -113,10 +118,14 @@ def validate_portfolio_url(text: str) -> bool:
 
 
 def get_works_line(data: dict) -> str:
-    """Строка со ссылкой на работы для сообщений модерации (parse_mode=Markdown)"""
+    """Строка со ссылкой на работы для модерации: короткий URL как кликабельный текст."""
     portfolio_url = data.get('portfolio_url')
-    # ВАЖНО: ссылку НЕ экранируем — она вставляется как текст
-    return f"\n🎨 Работы: ссылка" if portfolio_url else ""
+    if not portfolio_url:
+        return ""
+    short = re.sub(r'^https?://', '', portfolio_url.strip(), flags=re.IGNORECASE)
+    safe_text = escape_markdown(short)                      # текст ссылки экранируем
+    safe_url = portfolio_url.replace(chr(92), chr(92) * 2)  # в самом URL — только бэкслеши
+    return f"\n🎨 Работы: [{safe_text}]({safe_url})"
 
 # ============================================
 # ХЕНДЛЕРЫ
@@ -763,7 +772,7 @@ async def process_photo_not_photo(message: types.Message, state: FSMContext, bot
 
 async def notify_admin(bot: Bot, user_id: int, data: dict, photo_url: str, profile_id: int) -> bool:
     """Отправить анкету на модерацию в чат. Возвращает True если успешно."""
-    tg_username = data.get('portfolio_url') if False else data.get('tg_username')
+    tg_username = data.get('tg_username')
     
     # ✅ ЭКРАНИРУЕМ все поля для безопасного использования в Markdown
     safe_name = escape_markdown(data['name'])
@@ -772,7 +781,7 @@ async def notify_admin(bot: Bot, user_id: int, data: dict, photo_url: str, profi
     safe_tg = escape_markdown(tg_username) if tg_username else None
     
     tg_line = f"\n🔗 Тг: {safe_tg}" if safe_tg else ""
-    works_line = get_works_line(data)      # ✅ НОВОЕ: ссылка на работы (без экранирования)
+    works_line = get_works_line(data)      # ✅ кликабельная ссылка на работы
     
     text = (
         f"🔔 **Новая анкета на модерацию!**\n\n"
@@ -839,7 +848,7 @@ async def notify_admin_edit(bot: Bot, user_id: int, data: dict, photo_url: str, 
     safe_tg = escape_markdown(tg_username) if tg_username else None
     
     tg_line = f"\n🔗 Тг: {safe_tg}" if safe_tg else ""
-    works_line = get_works_line(data)      # ✅ НОВОЕ: ссылка на работы (без экранирования)
+    works_line = get_works_line(data)      # ✅ кликабельная ссылка на работы
     
     text = (
         f"✏️ **Изменения анкеты на модерацию!**\n\n"
