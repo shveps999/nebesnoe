@@ -7,6 +7,7 @@ from bot.database import (
     get_approved_profiles, user_has_approved_profile,
     get_user_last_message, save_user_message,
     get_user_list_messages, save_user_list_messages,
+    update_photo_file_id,
     user_has_consented, save_user_consent
 )
 from bot.config import ADMIN_ID
@@ -111,11 +112,10 @@ async def send_main_menu(message: types.Message, bot: Bot, user_tg_id: int, dele
 async def send_participants_list(message: types.Message, bot: Bot, user_tg_id: int):
     """Отправить список участников.
 
-    Кнопки "Обновить / В меню" вешаются на ПОСЛЕДНЮЮ карточку списка.
-    ID всех отправленных сообщений сохраняются в БД (JSON), чтобы при
-    обновлении/выходе удалить ровно их — без точки-заглушки и без веера.
-    Админ-панель под списком НЕ показывается: админ-инструменты —
-    команды /clear_all и /broadcast, модерация — в чате модерации.
+    Фото шлём по кэшу file_id (без скачивания из S3). Если кэша нет или он
+    протух — фоллбэк на URL из S3 и обновление кэша.
+    Кнопки "Обновить / В меню" — на последней карточке.
+    ID всех сообщений сохраняются в БД для точного удаления.
     """
     # Если список уже был показан — сначала убираем его (например, при "Обновить")
     await _delete_participant_list(bot, user_tg_id)
@@ -173,24 +173,39 @@ async def send_participants_list(message: types.Message, bot: Bot, user_tg_id: i
         )
 
         sent_msg = None
-        try:
-            if profile['photo_url']:
+        cached_file_id = profile.get('photo_file_id')
+
+        # 1) Быстрый путь: фото по кэшу file_id — S3 не трогаем вообще
+        if cached_file_id:
+            try:
+                sent_msg = await message.answer_photo(
+                    photo=cached_file_id,
+                    caption=caption,
+                    parse_mode=None,
+                    reply_markup=markup
+                )
+            except Exception as e:
+                logger.warning(f"Кэш фото анкеты {profile['id']} не сработал ({e}), отправляю по URL")
+
+        # 2) Кэша нет или он протух: шлём по URL из S3 и кэшируем file_id
+        if sent_msg is None and profile['photo_url']:
+            try:
                 sent_msg = await message.answer_photo(
                     photo=URLInputFile(profile['photo_url']),
                     caption=caption,
                     parse_mode=None,
                     reply_markup=markup
                 )
-            else:
-                sent_msg = await message.answer(
-                    caption,
-                    parse_mode=None,
-                    disable_web_page_preview=True,
-                    reply_markup=markup
-                )
-        except Exception as e:
-            logger.error(f"Ошибка отправки анкеты {profile['id']}: {e}")
-            # Фоллбэк: отправляем анкету текстом (с кнопками, если это последняя)
+                if sent_msg.photo:
+                    try:
+                        await update_photo_file_id(profile['id'], sent_msg.photo[-1].file_id)
+                    except Exception as e:
+                        logger.warning(f"Не удалось сохранить file_id анкеты {profile['id']}: {e}")
+            except Exception as e:
+                logger.error(f"Ошибка отправки фото анкеты {profile['id']}: {e}")
+
+        # 3) Фоллбэк: анкета текстом (с кнопками, если это последняя)
+        if sent_msg is None:
             try:
                 sent_msg = await message.answer(
                     caption,
