@@ -45,6 +45,7 @@ async def init_db():
                 tg_username VARCHAR(100),
                 portfolio_url TEXT,
                 photo_url TEXT,
+                photo_file_id TEXT,
                 status VARCHAR(50) DEFAULT 'pending',
                 admin_comment TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -64,6 +65,12 @@ async def init_db():
         except:
             pass  # Колонка уже существует
 
+        # Добавляем колонку photo_file_id если её нет (кэш фото Telegram)
+        try:
+            await cursor.execute("ALTER TABLE profiles ADD COLUMN photo_file_id TEXT AFTER photo_url")
+        except:
+            pass  # Колонка уже существует
+
         # Таблица служебных сообщений (меню / список участников)
         await _ensure_user_messages_table(cursor)
 
@@ -79,27 +86,40 @@ async def init_db():
     # Инициализировать таблицу согласий
     await init_consents_table()
 
-async def add_profile(tg_id, name, occupation, looking, tg_username, photo_url, portfolio_url=None):
+async def add_profile(tg_id, name, occupation, looking, tg_username, photo_url, portfolio_url=None, photo_file_id=None):
     conn = await get_connection()
     async with conn.cursor() as cursor:
         await cursor.execute("DELETE FROM profiles WHERE tg_id = %s", (tg_id,))
         await cursor.execute(
-            "INSERT INTO profiles (tg_id, name, occupation, looking, tg_username, portfolio_url, photo_url, status) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, 'pending')",
-            (tg_id, name, occupation, looking, tg_username, portfolio_url, photo_url)
+            "INSERT INTO profiles (tg_id, name, occupation, looking, tg_username, portfolio_url, photo_url, photo_file_id, status) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'pending')",
+            (tg_id, name, occupation, looking, tg_username, portfolio_url, photo_url, photo_file_id)
         )
         await conn.commit()
         profile_id = cursor.lastrowid
     conn.close()
     return profile_id
 
-async def update_profile(profile_id, name, occupation, looking, tg_username, photo_url, portfolio_url=None):
+async def update_profile(profile_id, name, occupation, looking, tg_username, photo_url, portfolio_url=None, photo_file_id=None):
+    """Обновить анкету. photo_file_id ВСЕГДА перезаписывается переданным значением:
+    при смене фото старый кэш должен сброситься (None), иначе список покажет старое фото."""
     conn = await get_connection()
     async with conn.cursor() as cursor:
         await cursor.execute(
             "UPDATE profiles SET name = %s, occupation = %s, looking = %s, tg_username = %s, "
-            "portfolio_url = %s, photo_url = %s, status = 'pending' WHERE id = %s",
-            (name, occupation, looking, tg_username, portfolio_url, photo_url, profile_id)
+            "portfolio_url = %s, photo_url = %s, photo_file_id = %s, status = 'pending' WHERE id = %s",
+            (name, occupation, looking, tg_username, portfolio_url, photo_url, photo_file_id, profile_id)
+        )
+        await conn.commit()
+    conn.close()
+
+async def update_photo_file_id(profile_id, file_id):
+    """Сохранить кэш file_id фото (после первой отправки через URL)"""
+    conn = await get_connection()
+    async with conn.cursor() as cursor:
+        await cursor.execute(
+            "UPDATE profiles SET photo_file_id = %s WHERE id = %s",
+            (file_id, profile_id)
         )
         await conn.commit()
     conn.close()
