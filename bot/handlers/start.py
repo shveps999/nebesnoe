@@ -1,7 +1,8 @@
 import logging
+import re
 from aiogram import Router, F, types, Bot
 from aiogram.types import URLInputFile
-from bot.keyboards import get_main_menu_inline, get_refresh_keyboard, get_admin_keyboard, get_consent_keyboard
+from bot.keyboards import get_main_menu_inline, get_refresh_keyboard, get_consent_keyboard
 from bot.database import (
     get_approved_profiles, user_has_approved_profile,
     get_user_last_message, save_user_message,
@@ -16,6 +17,14 @@ router = Router()
 # Ссылка на политику конфиденциальности
 PRIVACY_POLICY_URL = "https://docs.google.com/document/d/1bAcr5y_Ne3oFTOYPK8TXbOe09e-ZyMJhHrb8fpMug0M/edit?usp=sharing"
 
+
+def display_portfolio_url(url: str) -> str:
+    """Убирает http:// и https:// для показа. В БД ссылка остаётся полной."""
+    if not url:
+        return ""
+    return re.sub(r'^https?://', '', url.strip(), flags=re.IGNORECASE)
+
+
 async def delete_message_safe(bot: Bot, chat_id: int, message_id: int):
     """Безопасное удаление сообщения (игнорирует ошибки)"""
     try:
@@ -27,8 +36,8 @@ async def delete_message_safe(bot: Bot, chat_id: int, message_id: int):
 async def _delete_participant_list(bot: Bot, user_tg_id: int):
     """Удалить список участников по сохранённым ID сообщений.
 
-    Удаляются ровно те сообщения, которые были отправлены при показе списка
-    (карточки, сообщение с кнопками, админ-панель) — без "веера" по ID.
+    Удаляются ровно те сообщения, которые были отправлены при показе списка —
+    без "веера" по ID.
     """
     message_ids = await get_user_list_messages(user_tg_id)
     if message_ids:
@@ -61,7 +70,7 @@ async def show_consent_flow(message: types.Message, bot: Bot):
     # 2. Сообщение с согласием (без превью ссылки)
     consent_text = (
         "Перед тем, как начать, нам нужно получить твое согласие на обработку персональных данных:\n\n"
-        "🔹 Собираем: имя, сферу деятельности, кого ищете, фото, никнейм в тг\n"
+        "🔹 Собираем: имя, сферу деятельности, кого ищете, фото, никнейм в тг, ссылку на работы (по желанию)\n"
         "🔹 Удалить анкету: через меню «Управление анкетой» → «Удалить анкету»\n"
         "🔹 Перед каждым новым ивентом — удаляется автоматически\n\n"
         f"Нажимая «Я согласен», вы принимаете условия Политики обработки персональных данных."
@@ -89,7 +98,6 @@ async def send_main_menu(message: types.Message, bot: Bot, user_tg_id: int, dele
         if last_menu_id and last_menu_id > 0:
             await delete_message_safe(bot, user_tg_id, last_menu_id)
 
-    # ✅ Главное меню использует Markdown (контролируемый текст)
     new_message = await message.answer(
         "🏠 **Главное меню**\n\nВыберите действие:",
         parse_mode="Markdown",
@@ -106,6 +114,8 @@ async def send_participants_list(message: types.Message, bot: Bot, user_tg_id: i
     Кнопки "Обновить / В меню" вешаются на ПОСЛЕДНЮЮ карточку списка.
     ID всех отправленных сообщений сохраняются в БД (JSON), чтобы при
     обновлении/выходе удалить ровно их — без точки-заглушки и без веера.
+    Админ-панель под списком НЕ показывается: админ-инструменты —
+    команды /clear_all и /broadcast, модерация — в чате модерации.
     """
     # Если список уже был показан — сначала убираем его (например, при "Обновить")
     await _delete_participant_list(bot, user_tg_id)
@@ -147,20 +157,24 @@ async def send_participants_list(message: types.Message, bot: Bot, user_tg_id: i
         # Кнопки — только на последней карточке
         markup = get_refresh_keyboard() if is_last else None
 
-        # ✅ ПРОСТОЙ ТЕКСТ БЕЗ MARKDOWN — никаких ошибок парсинга
+        # ПРОСТОЙ ТЕКСТ БЕЗ MARKDOWN — никаких ошибок парсинга
         tg_line = f"\n\n🔗 Тг: {profile.get('tg_username')}" if profile.get('tg_username') else ""
+
+        # Ссылка на работы: показываем без https:// (в БД она полная)
+        works_short = display_portfolio_url(profile.get('portfolio_url'))
+        works_line = f"\n\n🎨 Работы: {works_short}" if works_short else ""
 
         caption = (
             f"{profile['name']}\n\n"
             f"🪄 {profile['occupation'] or ''}\n\n"
             f"💡 Ищу: {profile['looking'] or ''}"
             f"{tg_line}"
+            f"{works_line}"
         )
 
         sent_msg = None
         try:
             if profile['photo_url']:
-                # ✅ parse_mode=None — отключаем парсинг для пользовательских данных
                 sent_msg = await message.answer_photo(
                     photo=URLInputFile(profile['photo_url']),
                     caption=caption,
@@ -171,13 +185,19 @@ async def send_participants_list(message: types.Message, bot: Bot, user_tg_id: i
                 sent_msg = await message.answer(
                     caption,
                     parse_mode=None,
+                    disable_web_page_preview=True,
                     reply_markup=markup
                 )
         except Exception as e:
             logger.error(f"Ошибка отправки анкеты {profile['id']}: {e}")
             # Фоллбэк: отправляем анкету текстом (с кнопками, если это последняя)
             try:
-                sent_msg = await message.answer(caption, parse_mode=None, reply_markup=markup)
+                sent_msg = await message.answer(
+                    caption,
+                    parse_mode=None,
+                    disable_web_page_preview=True,
+                    reply_markup=markup
+                )
             except Exception as e2:
                 logger.error(f"Не удалось отправить анкету {profile['id']} даже текстом: {e2}")
 
@@ -194,16 +214,6 @@ async def send_participants_list(message: types.Message, bot: Bot, user_tg_id: i
             reply_markup=get_refresh_keyboard()
         )
         sent_ids.append(tail_msg.message_id)
-
-    # Админ-панель — часть списка: её ID тоже сохраняем,
-    # чтобы она удалялась при обновлении и не копились дубли
-    if user_tg_id == ADMIN_ID:
-        admin_msg = await message.answer(
-            "🔧 **Админ-панель:**",
-            parse_mode="Markdown",
-            reply_markup=get_admin_keyboard()
-        )
-        sent_ids.append(admin_msg.message_id)
 
     # Сохраняем точные ID всех сообщений списка и очищаем якорь меню
     await save_user_list_messages(user_tg_id, sent_ids)
