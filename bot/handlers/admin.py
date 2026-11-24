@@ -10,7 +10,8 @@ from bot.keyboards import (
     get_broadcast_cancel_keyboard, get_broadcast_confirm_keyboard
 )
 from bot.database import (
-    get_pending_profiles, update_profile_status, get_profile_by_id, 
+    get_pending_profiles, get_approved_profiles,          # ✅ ИСПРАВЛЕНО: добавлен get_approved_profiles
+    update_profile_status, get_profile_by_id, 
     get_all_approved_with_photos, delete_all_approved_profiles,
     get_all_user_tg_ids, get_approved_user_tg_ids
 )
@@ -172,7 +173,12 @@ async def admin_edit_request(callback: types.CallbackQuery, state: FSMContext):
         return
     
     profile_id = int(callback.data.split("_")[-1])
-    await state.update_data(profile_id=profile_id)
+    # ✅ ИСПРАВЛЕНО: запоминаем сообщение модерации, чтобы удалить его позже из message-хендлера
+    await state.update_data(
+        profile_id=profile_id,
+        moderation_message_id=callback.message.message_id,
+        moderation_chat_id=callback.message.chat.id
+    )
     
     await callback.message.answer(
         "✏️ **Введите комментарий для пользователя**\n\n"
@@ -215,11 +221,15 @@ async def admin_send_comment(message: types.Message, state: FSMContext, bot: Bot
         reply_markup=get_main_menu_inline()
     )
     
-    try:
-        await callback.message.delete()
-        logger.info(f"Moderation message {callback.message.message_id} deleted after edit request")
-    except Exception as e:
-        logger.error(f"Не удалось удалить сообщение модерации: {e}")
+    # ✅ ИСПРАВЛЕНО: раньше тут был несуществующий callback.message
+    moderation_message_id = data.get('moderation_message_id')
+    moderation_chat_id = data.get('moderation_chat_id', MODERATION_CHAT_ID)
+    if moderation_message_id:
+        try:
+            await bot.delete_message(chat_id=moderation_chat_id, message_id=moderation_message_id)
+            logger.info(f"Moderation message {moderation_message_id} deleted after edit request")
+        except Exception as e:
+            logger.error(f"Не удалось удалить сообщение модерации: {e}")
     
     await message.answer("✅ **Сообщение отправлено пользователю!**", reply_markup=get_main_menu_inline())
     await state.clear()
@@ -259,6 +269,7 @@ async def broadcast_cancel(callback: types.CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.message.edit_text(
         "❌ **Рассылка отменена**",
+        parse_mode="Markdown",          # ✅ ИСПРАВЛЕНО: был пропущен parse_mode
         reply_markup=get_main_menu_inline()
     )
     await callback.answer()
