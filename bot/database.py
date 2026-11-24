@@ -1,8 +1,20 @@
+import json
 import aiomysql
 from bot.config import DB_CONFIG
 
 async def get_connection():
     return await aiomysql.connect(**DB_CONFIG)
+
+async def _ensure_user_messages_table(cursor):
+    """Создать таблицу user_messages, если её нет"""
+    await cursor.execute("""
+        CREATE TABLE IF NOT EXISTS user_messages (
+            tg_id BIGINT PRIMARY KEY,
+            last_menu_message_id INT NULL,
+            list_message_ids TEXT NULL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        )
+    """)
 
 async def init_consents_table():
     """Создать таблицу согласий если нет"""
@@ -31,7 +43,6 @@ async def init_db():
                 occupation TEXT,
                 looking TEXT,
                 tg_username VARCHAR(100),
-                portfolio_url TEXT,
                 photo_url TEXT,
                 status VARCHAR(50) DEFAULT 'pending',
                 admin_comment TEXT,
@@ -39,48 +50,47 @@ async def init_db():
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             )
         """)
-        
+
         # Добавляем колонку tg_username если её нет
         try:
             await cursor.execute("ALTER TABLE profiles ADD COLUMN tg_username VARCHAR(100) AFTER looking")
         except:
             pass  # Колонка уже существует
-        
-        # ✅ НОВОЕ: добавляем колонку portfolio_url если её нет
+
+        # Таблица служебных сообщений (меню / список участников)
+        await _ensure_user_messages_table(cursor)
+
+        # Миграция: колонка со списком ID сообщений списка участников (JSON)
         try:
-            await cursor.execute("ALTER TABLE profiles ADD COLUMN portfolio_url TEXT AFTER tg_username")
+            await cursor.execute("ALTER TABLE user_messages ADD COLUMN list_message_ids TEXT NULL AFTER last_menu_message_id")
         except:
             pass  # Колонка уже существует
-        
+
         await conn.commit()
     conn.close()
-    
+
     # Инициализировать таблицу согласий
     await init_consents_table()
 
-# ✅ НОВОЕ: параметр portfolio_url добавлен в конец со значением по умолчанию
-async def add_profile(tg_id, name, occupation, looking, tg_username, photo_url, portfolio_url=None):
+async def add_profile(tg_id, name, occupation, looking, tg_username, photo_url):
     conn = await get_connection()
     async with conn.cursor() as cursor:
         await cursor.execute("DELETE FROM profiles WHERE tg_id = %s", (tg_id,))
         await cursor.execute(
-            "INSERT INTO profiles (tg_id, name, occupation, looking, tg_username, portfolio_url, photo_url, status) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, 'pending')",
-            (tg_id, name, occupation, looking, tg_username, portfolio_url, photo_url)
+            "INSERT INTO profiles (tg_id, name, occupation, looking, tg_username, photo_url, status) VALUES (%s, %s, %s, %s, %s, %s, 'pending')",
+            (tg_id, name, occupation, looking, tg_username, photo_url)
         )
         await conn.commit()
         profile_id = cursor.lastrowid
     conn.close()
     return profile_id
 
-# ✅ НОВОЕ: параметр portfolio_url добавлен в конец со значением по умолчанию
-async def update_profile(profile_id, name, occupation, looking, tg_username, photo_url, portfolio_url=None):
+async def update_profile(profile_id, name, occupation, looking, tg_username, photo_url):
     conn = await get_connection()
     async with conn.cursor() as cursor:
         await cursor.execute(
-            "UPDATE profiles SET name = %s, occupation = %s, looking = %s, tg_username = %s, "
-            "portfolio_url = %s, photo_url = %s, status = 'pending' WHERE id = %s",
-            (name, occupation, looking, tg_username, portfolio_url, photo_url, profile_id)
+            "UPDATE profiles SET name = %s, occupation = %s, looking = %s, tg_username = %s, photo_url = %s, status = 'pending' WHERE id = %s",
+            (name, occupation, looking, tg_username, photo_url, profile_id)
         )
         await conn.commit()
     conn.close()
@@ -91,7 +101,7 @@ async def delete_profile_by_tg_id(tg_id):
         await cursor.execute("SELECT photo_url FROM profiles WHERE tg_id = %s AND status = 'approved'", (tg_id,))
         result = await cursor.fetchone()
         photo_url = result[0] if result else None
-        
+
         await cursor.execute("DELETE FROM profiles WHERE tg_id = %s", (tg_id,))
         deleted_count = cursor.rowcount
         await conn.commit()
@@ -168,17 +178,19 @@ async def user_has_approved_profile(tg_id):
     conn.close()
     return result[0] > 0 if result else False
 
-async def save_user_message(tg_id: int, message_id: int):
-    """Сохранить ID последнего сообщения меню пользователя"""
+async def save_user_message(tg_id: int, message_id):
+    """Сохранить ID служебного сообщения пользователя.
+
+    Знак кодирует тип сообщения:
+      > 0  — главное меню (или сервисное сообщение с кнопками меню)
+      < 0  — экран согласия на обработку данных
+      None — очистить (например, когда показано меню/список уже удалены)
+
+    ID сообщений списка участников хранятся отдельно, см. save_user_list_messages.
+    """
     conn = await get_connection()
     async with conn.cursor() as cursor:
-        await cursor.execute("""
-            CREATE TABLE IF NOT EXISTS user_messages (
-                tg_id BIGINT PRIMARY KEY,
-                last_menu_message_id INT,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-            )
-        """)
+        await _ensure_user_messages_table(cursor)
         await cursor.execute(
             "INSERT INTO user_messages (tg_id, last_menu_message_id) VALUES (%s, %s) ON DUPLICATE KEY UPDATE last_menu_message_id = %s",
             (tg_id, message_id, message_id)
@@ -186,21 +198,48 @@ async def save_user_message(tg_id: int, message_id: int):
         await conn.commit()
     conn.close()
 
-async def get_user_last_message(tg_id: int) -> int:
-    """Получить ID последнего сообщения меню пользователя"""
+async def get_user_last_message(tg_id: int):
+    """Получить ID служебного сообщения (меню > 0, согласие < 0, None — нет)"""
     conn = await get_connection()
     async with conn.cursor() as cursor:
-        await cursor.execute("""
-            CREATE TABLE IF NOT EXISTS user_messages (
-                tg_id BIGINT PRIMARY KEY,
-                last_menu_message_id INT,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-            )
-        """)
+        await _ensure_user_messages_table(cursor)
         await cursor.execute("SELECT last_menu_message_id FROM user_messages WHERE tg_id = %s", (tg_id,))
         result = await cursor.fetchone()
     conn.close()
     return result[0] if result else None
+
+async def save_user_list_messages(tg_id: int, message_ids):
+    """Сохранить ID ВСЕХ сообщений списка участников (карточки, кнопки, админ-панель).
+
+    Хранится как JSON-массив в колонке list_message_ids.
+    Пустой список очищает запись.
+    """
+    conn = await get_connection()
+    async with conn.cursor() as cursor:
+        await _ensure_user_messages_table(cursor)
+        payload = json.dumps(list(message_ids)) if message_ids else None
+        await cursor.execute(
+            "INSERT INTO user_messages (tg_id, list_message_ids) VALUES (%s, %s) ON DUPLICATE KEY UPDATE list_message_ids = %s",
+            (tg_id, payload, payload)
+        )
+        await conn.commit()
+    conn.close()
+
+async def get_user_list_messages(tg_id: int):
+    """Получить список ID сообщений списка участников (пустой список, если нет)"""
+    conn = await get_connection()
+    async with conn.cursor() as cursor:
+        await _ensure_user_messages_table(cursor)
+        await cursor.execute("SELECT list_message_ids FROM user_messages WHERE tg_id = %s", (tg_id,))
+        result = await cursor.fetchone()
+    conn.close()
+    if not result or not result[0]:
+        return []
+    try:
+        ids = json.loads(result[0])
+        return [int(m) for m in ids] if isinstance(ids, list) else []
+    except (ValueError, TypeError):
+        return []
 
 async def get_all_user_tg_ids():
     """Получить список всех уникальных Telegram ID пользователей"""
@@ -234,7 +273,7 @@ async def save_user_consent(tg_id: int):
     conn = await get_connection()
     async with conn.cursor() as cursor:
         await cursor.execute("""
-            INSERT INTO user_consents (tg_id, consented, consented_at) 
+            INSERT INTO user_consents (tg_id, consented, consented_at)
             VALUES (%s, TRUE, NOW())
             ON DUPLICATE KEY UPDATE consented = TRUE, consented_at = NOW()
         """, (tg_id,))
