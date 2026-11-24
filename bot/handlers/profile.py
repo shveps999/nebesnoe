@@ -177,7 +177,7 @@ async def delete_profile_callback(callback: types.CallbackQuery):
     await delete_message_safe(callback.bot, user_tg_id, callback.message.message_id)
     await callback.message.answer(
         "⚠️ **Удаление анкеты**\n\n"
-        "Уверен, что хочешь удалить свою визитку?\n\n",
+        "Уверен, что хочешь удалить свою анкету?\n\n",
         parse_mode="Markdown",
         reply_markup=get_confirm_delete_keyboard()
     )
@@ -209,7 +209,7 @@ async def delete_profile_confirm(callback: types.CallbackQuery, bot: Bot):
     
     await delete_message_safe(bot, user_tg_id, callback.message.message_id)
     await callback.message.answer(
-        "**Визитка успешно удалена**\n\n",
+        "**Анкета успешно удалена**\n\n",
         parse_mode="Markdown",
         reply_markup=get_main_menu_inline()
     )
