@@ -1,4 +1,5 @@
 import logging
+import re                                    # ✅ НОВОЕ
 from aiogram import Router, F, types, Bot
 from aiogram.types import URLInputFile
 from bot.keyboards import get_main_menu_inline, get_refresh_keyboard, get_admin_keyboard, get_consent_keyboard
@@ -10,6 +11,18 @@ router = Router()
 
 # Ссылка на политику конфиденциальности
 PRIVACY_POLICY_URL = "https://docs.google.com/document/d/1bAcr5y_Ne3oFTOYPK8TXbOe09e-ZyMJhHrb8fpMug0M/edit?usp=sharing"
+
+
+# ✅ НОВОЕ: короткий вид ссылки для отображения в анкете
+def display_portfolio_url(url: str) -> str:
+    """Убирает http:// и https:// для показа. В БД ссылка остаётся полной."""
+    if not url:
+        return ""
+    short = re.sub(r'^https?://', '', url.strip(), flags=re.IGNORECASE)
+    # если хочешь убирать ещё и www. — раскомментируй строку ниже
+    # short = re.sub(r'^www\.', '', short, flags=re.IGNORECASE)
+    return short
+
 
 async def delete_message_safe(bot: Bot, chat_id: int, message_id: int):
     """Безопасное удаление сообщения (игнорирует ошибки)"""
@@ -42,7 +55,7 @@ async def show_consent_flow(message: types.Message, bot: Bot):
     # 2. Сообщение с согласием (без превью ссылки)
     consent_text = (
         "Перед тем, как начать, нам нужно получить твое согласие на обработку персональных данных:\n\n"
-        "🔹 Собираем: имя, сферу деятельности, кого ищете, фото, никнейм в тг, ссылку на работы (по желанию)\n"  # ✅ НОВОЕ
+        "🔹 Собираем: имя, сферу деятельности, кого ищете, фото, никнейм в тг, ссылку на работы (по желанию)\n"
         "🔹 Удалить анкету: через меню «Управление анкетой» → «Удалить анкету»\n"
         "🔹 Перед каждым новым ивентом — удаляется автоматически\n\n"
         f"Нажимая «Я согласен», вы принимаете условия [Политики обработки персональных данных]({PRIVACY_POLICY_URL})."
@@ -112,8 +125,10 @@ async def send_participants_list(message: types.Message, bot: Bot, user_tg_id: i
     for profile in profiles:
         # ✅ ПРОСТОЙ ТЕКСТ БЕЗ MARKDOWN — никаких ошибок парсинга
         tg_line = f"\n\n🔗 Тг: {profile.get('tg_username')}" if profile.get('tg_username') else ""
-        # ✅ НОВОЕ: ссылка на работы (Telegram сам делает её кликабельной)
-        works_line = f"\n\n🎨 Работы: {profile.get('portfolio_url')}" if profile.get('portfolio_url') else ""
+        
+        # ✅ НОВОЕ: показываем ссылку без https:// (в БД она полная)
+        works_short = display_portfolio_url(profile.get('portfolio_url'))
+        works_line = f"\n\n🎨 Работы: {works_short}" if works_short else ""
         
         caption = (
             f"{profile['name']}\n\n"
@@ -135,7 +150,7 @@ async def send_participants_list(message: types.Message, bot: Bot, user_tg_id: i
                 sent_msg = await message.answer(
                     caption,
                     parse_mode=None,
-                    disable_web_page_preview=True      # ✅ НОВОЕ: без превью сайта
+                    disable_web_page_preview=True
                 )
             
             if first_msg_id is None:
