@@ -6,7 +6,7 @@ from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart
 from bot.config import BOT_TOKEN, ADMIN_ID
 from bot.database import init_db, user_has_consented
-from bot.handlers import start, profile, admin, admin_photo
+from bot.handlers import start, profile, admin, admin_photo, admin_stats
 from bot.handlers.start import send_main_menu, show_consent_flow
 from bot.keyboards import get_main_menu_inline
 
@@ -49,6 +49,7 @@ async def main():
     dp.include_router(profile.router)
     dp.include_router(admin.router)
     dp.include_router(admin_photo.router)
+    dp.include_router(admin_stats.router)
     
     @dp.update.middleware()
     async def log_updates(handler, event, data):
