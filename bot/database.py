@@ -124,6 +124,27 @@ async def update_photo_file_id(profile_id, file_id):
         await conn.commit()
     conn.close()
 
+async def update_profile_photo(profile_id, photo_url, photo_file_id=None):
+    """Админ-замена фото (/setphoto): обновляет ТОЛЬКО фото и его кэш.
+    Статус и остальные поля не трогает — повторная модерация не нужна."""
+    conn = await get_connection()
+    async with conn.cursor() as cursor:
+        await cursor.execute(
+            "UPDATE profiles SET photo_url = %s, photo_file_id = %s WHERE id = %s",
+            (photo_url, photo_file_id, profile_id)
+        )
+        await conn.commit()
+    conn.close()
+
+async def get_all_profiles():
+    """Все анкеты кратко (для админ-команды /profiles)"""
+    conn = await get_connection()
+    async with conn.cursor(aiomysql.DictCursor) as cursor:
+        await cursor.execute("SELECT id, name, tg_username, status FROM profiles ORDER BY id DESC")
+        result = await cursor.fetchall()
+    conn.close()
+    return result
+
 async def delete_profile_by_tg_id(tg_id):
     conn = await get_connection()
     async with conn.cursor() as cursor:
