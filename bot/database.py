@@ -145,6 +145,57 @@ async def get_all_profiles():
     conn.close()
     return result
 
+async def get_bot_stats():
+    """Сводная статистика для админ-команды /stats"""
+    conn = await get_connection()
+    async with conn.cursor(aiomysql.DictCursor) as cursor:
+        # Все пользователи бота = все, кто дал согласие
+        await cursor.execute(
+            "SELECT COUNT(*) AS cnt FROM user_consents WHERE consented = TRUE"
+        )
+        users_total = (await cursor.fetchone())['cnt']
+
+        await cursor.execute(
+            "SELECT COUNT(*) AS cnt FROM user_consents "
+            "WHERE consented = TRUE AND consented_at >= NOW() - INTERVAL 7 DAY"
+        )
+        users_new_7d = (await cursor.fetchone())['cnt']
+
+        await cursor.execute("SELECT COUNT(DISTINCT tg_id) AS cnt FROM profiles")
+        users_with_profile = (await cursor.fetchone())['cnt']
+
+        await cursor.execute("SELECT COUNT(*) AS cnt FROM profiles WHERE status = 'approved'")
+        approved = (await cursor.fetchone())['cnt']
+
+        await cursor.execute("SELECT COUNT(*) AS cnt FROM profiles WHERE status = 'pending'")
+        pending = (await cursor.fetchone())['cnt']
+
+        # Аудитория рассылки «всем» = то же, что вернёт get_all_user_tg_ids()
+        await cursor.execute(
+            "SELECT COUNT(*) AS cnt FROM ("
+            "SELECT tg_id FROM profiles "
+            "UNION "
+            "SELECT tg_id FROM user_consents WHERE consented = TRUE"
+            ") AS recipients"
+        )
+        broadcast_all = (await cursor.fetchone())['cnt']
+
+        await cursor.execute(
+            "SELECT COUNT(DISTINCT tg_id) AS cnt FROM profiles WHERE status = 'approved'"
+        )
+        broadcast_approved = (await cursor.fetchone())['cnt']
+    conn.close()
+    return {
+        'users_total': users_total,
+        'users_new_7d': users_new_7d,
+        'users_with_profile': users_with_profile,
+        'users_without_profile': max(0, users_total - users_with_profile),
+        'approved': approved,
+        'pending': pending,
+        'broadcast_all': broadcast_all,
+        'broadcast_approved': broadcast_approved,
+    }
+
 async def delete_profile_by_tg_id(tg_id):
     conn = await get_connection()
     async with conn.cursor() as cursor:
@@ -292,10 +343,16 @@ async def get_user_list_messages(tg_id: int):
         return []
 
 async def get_all_user_tg_ids():
-    """Получить список всех уникальных Telegram ID пользователей"""
+    """Все получатели рассылки «всем»:
+    создатели анкет + все, кто дал согласие (даже если анкеты нет).
+    UNION сам убирает дубли."""
     conn = await get_connection()
     async with conn.cursor() as cursor:
-        await cursor.execute("SELECT DISTINCT tg_id FROM profiles")
+        await cursor.execute(
+            "SELECT tg_id FROM profiles "
+            "UNION "
+            "SELECT tg_id FROM user_consents WHERE consented = TRUE"
+        )
         result = await cursor.fetchall()
     conn.close()
     return [row[0] for row in result]
